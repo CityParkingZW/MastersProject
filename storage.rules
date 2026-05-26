@@ -1,0 +1,14 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Model files readable by authenticated users and Cloud Functions
+    match /models/{file} {
+      allow read: if request.auth != null;
+      allow write: if false; // write via CLI / console only
+    }
+    // Block everything else by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

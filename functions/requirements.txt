@@ -1,0 +1,5 @@
+functions-framework==3.*
+firebase-admin==6.*
+scikit-learn==1.8.*
+numpy==2.*
+joblib==1.*

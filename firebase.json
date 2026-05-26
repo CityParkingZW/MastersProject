@@ -4,5 +4,12 @@
     "location": "europe-west1",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "functions": {
+    "source": "functions",
+    "runtime": "python312"
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }
