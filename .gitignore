@@ -68,3 +68,6 @@ vite.config.ts.timestamp-*
 *.tgz
 .yarn-integrity
 .pnpm-store
+
+
+serviceAccountKey.json
