@@ -1,0 +1,7 @@
+# Lambda dependencies for carbon_predictor function
+# Note: boto3 is provided by Lambda runtime, but included for local testing
+
+boto3>=1.26.0
+numpy>=1.24.0
+joblib>=1.2.0
+scikit-learn>=1.2.0

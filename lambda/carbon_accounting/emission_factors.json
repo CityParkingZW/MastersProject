@@ -1,0 +1,188 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "source": "IPCC 2006 Guidelines, Zimbabwe National Communications",
+    "last_updated": "2026-01-01",
+    "applicable_region": "Zimbabwe"
+  },
+  "global_warming_potentials": {
+    "source": "IPCC AR6 (2021)",
+    "time_horizon": "100 years",
+    "gases": {
+      "co2": {
+        "formula": "CO2",
+        "name": "Carbon Dioxide",
+        "gwp": 1,
+        "unit": "kg CO2e/kg CO2"
+      },
+      "ch4": {
+        "formula": "CH4",
+        "name": "Methane",
+        "gwp": 28,
+        "gwp_with_feedbacks": 30,
+        "unit": "kg CO2e/kg CH4",
+        "notes": "Fossil CH4 has GWP of 30; biogenic CH4 uses 28"
+      },
+      "n2o": {
+        "formula": "N2O",
+        "name": "Nitrous Oxide",
+        "gwp": 265,
+        "unit": "kg CO2e/kg N2O"
+      },
+      "sf6": {
+        "formula": "SF6",
+        "name": "Sulfur Hexafluoride",
+        "gwp": 23500,
+        "unit": "kg CO2e/kg SF6"
+      }
+    }
+  },
+  "electricity_grid": {
+    "zimbabwe": {
+      "emission_factor": 0.92,
+      "unit": "kg CO2e/kWh",
+      "source": "Zimbabwe Third National Communication to UNFCCC",
+      "year": 2020,
+      "grid_mix": {
+        "hydro": 0.35,
+        "coal": 0.55,
+        "imports": 0.08,
+        "other": 0.02
+      }
+    },
+    "south_africa": {
+      "emission_factor": 0.95,
+      "unit": "kg CO2e/kWh",
+      "source": "Eskom Integrated Report",
+      "year": 2023
+    },
+    "global_average": {
+      "emission_factor": 0.50,
+      "unit": "kg CO2e/kWh",
+      "source": "IEA World Energy Outlook"
+    }
+  },
+  "stationary_combustion": {
+    "diesel": {
+      "co2_ef": 2.68,
+      "ch4_ef": 0.0001,
+      "n2o_ef": 0.0001,
+      "unit": "kg/L",
+      "net_calorific_value": 36.0,
+      "density": 0.835
+    },
+    "petrol_gasoline": {
+      "co2_ef": 2.31,
+      "ch4_ef": 0.0001,
+      "n2o_ef": 0.0001,
+      "unit": "kg/L",
+      "net_calorific_value": 32.0,
+      "density": 0.745
+    },
+    "lpg": {
+      "co2_ef": 1.51,
+      "ch4_ef": 0.0001,
+      "n2o_ef": 0.0001,
+      "unit": "kg/L",
+      "net_calorific_value": 26.0,
+      "density": 0.510
+    },
+    "natural_gas": {
+      "co2_ef": 2.04,
+      "ch4_ef": 0.001,
+      "n2o_ef": 0.0001,
+      "unit": "kg/m3",
+      "net_calorific_value": 38.0
+    },
+    "coal": {
+      "co2_ef": 2.42,
+      "ch4_ef": 0.001,
+      "n2o_ef": 0.0015,
+      "unit": "kg/kg",
+      "net_calorific_value": 25.8
+    }
+  },
+  "waste": {
+    "landfill_methane": {
+      "mcf": 0.6,
+      "doc": 0.15,
+      "docf": 0.5,
+      "f": 0.5,
+      "r": 0,
+      "ox": 0.1,
+      "unit": "fraction",
+      "notes": "Default IPCC values for unmanaged deep landfills"
+    },
+    "wastewater": {
+      "domestic_bod_ef": 0.6,
+      "industrial_cod_ef": 0.25,
+      "unit": "kg CH4/kg BOD or COD"
+    },
+    "composting": {
+      "ch4_ef": 0.004,
+      "n2o_ef": 0.0003,
+      "unit": "kg/kg waste"
+    }
+  },
+  "agriculture_livestock": {
+    "cattle_dairy": {
+      "enteric_ch4": 128,
+      "manure_ch4": 2.8,
+      "unit": "kg CH4/head/year",
+      "region": "Africa"
+    },
+    "cattle_non_dairy": {
+      "enteric_ch4": 53,
+      "manure_ch4": 1.4,
+      "unit": "kg CH4/head/year",
+      "region": "Africa"
+    },
+    "sheep": {
+      "enteric_ch4": 5,
+      "manure_ch4": 0.2,
+      "unit": "kg CH4/head/year"
+    },
+    "pigs": {
+      "enteric_ch4": 1.5,
+      "manure_ch4": 4,
+      "unit": "kg CH4/head/year"
+    },
+    "poultry": {
+      "enteric_ch4": 0,
+      "manure_ch4": 0.03,
+      "unit": "kg CH4/head/year"
+    }
+  },
+  "conversion_factors": {
+    "ch4_density_stp": {
+      "value": 0.657,
+      "unit": "kg/m3",
+      "conditions": "0°C, 1 atm"
+    },
+    "co2_density_stp": {
+      "value": 1.977,
+      "unit": "kg/m3",
+      "conditions": "0°C, 1 atm"
+    },
+    "ppm_to_fraction": {
+      "value": 0.000001,
+      "notes": "1 ppm = 1e-6"
+    }
+  },
+  "uncertainty_factors": {
+    "tier1_activity_data": {
+      "electricity": 2,
+      "fuel_combustion": 3,
+      "waste": 30,
+      "unit": "percent"
+    },
+    "tier1_emission_factors": {
+      "co2_combustion": 5,
+      "ch4_combustion": 50,
+      "n2o_combustion": 100,
+      "electricity": 10,
+      "waste": 50,
+      "unit": "percent"
+    }
+  }
+}

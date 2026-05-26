@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(mkdir -p \"c:/Users/TSITSI/SCHOOL/2.2/ProjectApp/app/facilities/[id]\")",
+      "Bash(mkdir -p \"c:/Users/TSITSI/SCHOOL/2.2/ProjectApp/app/facilities/[id]/edit\")",
+      "Bash(firebase --version)",
+      "Bash(firebase projects:list)"
+    ]
+  }
+}
