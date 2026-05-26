@@ -8,9 +8,63 @@ __v0_jsx-dev-runtime.ts
 next.user-config.*
 
 # Environment variables
+.env
+.env.*
+!.env.example
 .env*.local
 
-# Common ignores
-node_modules
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage
+*.lcov
+.nyc_output
+
+# Dependencies
+node_modules/
+jspm_packages/
+bower_components/
+web_modules/
+
+# Build outputs
 .next/
+out
+dist
+build/Release
+.nuxt
+.output
+
+# Caches
+.cache
+.parcel-cache
+.eslintcache
+.stylelintcache
+.npm
+
+# OS files
 .DS_Store
+
+# TypeScript
+*.tsbuildinfo
+
+# Vite
+.vite/
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Misc
+*.tgz
+.yarn-integrity
+.pnpm-store
