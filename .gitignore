@@ -69,5 +69,10 @@ vite.config.ts.timestamp-*
 .yarn-integrity
 .pnpm-store
 
-
+#security yangu
 serviceAccountKey.json
+#zvema models
+models/
+*.joblib
+.venv/
+node_modules/
