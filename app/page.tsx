@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { collection, addDoc, getDocs, query, where, getDoc, doc } from 'firebase/firestore'
+import { collection, addDoc, getDocs, query, where, getDoc, doc, onSnapshot, orderBy, limit } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { useAuth } from '@/lib/auth-context'
 import { AppShell } from '@/components/layout/app-shell'
@@ -89,6 +89,7 @@ export default function DashboardPage() {
   const [dailySummaries, setDailySummaries] = useState<DailyEmissionSummary[]>([])
   const [predictions, setPredictions] = useState<Prediction[]>([])
   const [mrvReport, setMrvReport] = useState<MRVReport | null>(null)
+  const [mlEmission, setMlEmission] = useState<{ predicted_co2e_kg: number; model_version: string; method: string } | null>(null)
   const [isGeneratingReport, setIsGeneratingReport] = useState(false)
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [reportFacilityId, setReportFacilityId] = useState('')
@@ -178,6 +179,18 @@ export default function DashboardPage() {
       if (accessible.length > 0) setReportFacilityId(accessible[0].id)
     })
   }, [appUser])
+
+  // Real-time ML predictions from Firestore (written by Cloud Function trigger)
+  useEffect(() => {
+    const q = query(collection(db, 'predictions'), orderBy('createdAt', 'desc'), limit(1))
+    const unsub = onSnapshot(q, (snap) => {
+      if (!snap.empty) {
+        const pred = snap.docs[0].data().prediction
+        if (pred?.predicted_co2e_kg !== undefined) setMlEmission(pred)
+      }
+    }, () => { /* ignore permission errors when not logged in */ })
+    return () => unsub()
+  }, [])
 
   // Load ZCMA projects for the selected facility
   useEffect(() => {
@@ -333,12 +346,12 @@ export default function DashboardPage() {
             icon={<Zap className="h-4 w-4" />}
           />
           <MetricCard
-            title="CO2e Rate"
-            value={currentEmission?.total_co2e_kg || 0}
+            title={mlEmission ? 'CO2e (ML)' : 'CO2e Rate'}
+            value={mlEmission?.predicted_co2e_kg ?? currentEmission?.total_co2e_kg ?? 0}
             unit="kg/hr"
             trend="stable"
             icon={<Factory className="h-4 w-4" />}
-            status={currentEmission && currentEmission.total_co2e_kg > 200 ? 'warning' : 'normal'}
+            status={(mlEmission?.predicted_co2e_kg ?? currentEmission?.total_co2e_kg ?? 0) > 200 ? 'warning' : 'normal'}
           />
         </div>
 

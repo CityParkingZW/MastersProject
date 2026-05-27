@@ -1,22 +1,85 @@
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onRequest } = require("firebase-functions/v2/https");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const logger = require("firebase-functions/logger");
+const admin = require("firebase-admin");
+
+admin.initializeApp();
+const db = admin.firestore();
 
 setGlobalOptions({ region: "europe-west1", maxInstances: 10 });
 
-// Set this to your Render.com URL after deploying ml-service/
-// e.g. https://carbon-ml-harare.onrender.com
 const RENDER_ML_URL = process.env.RENDER_ML_URL || "";
 
 /**
- * predictEmissions — HTTP Cloud Function
+ * onNewSensorReading — Firestore trigger
  *
- * Accepts a sensor reading and forwards it to the Render.com
- * FastAPI ML service. Falls back to GHG Protocol rule-based
- * calculation if Render.com is unavailable.
+ * Fires whenever a document is created in sensor_readings/{readingId}.
+ * Calls the Render.com FastAPI ML service (or falls back to GHG rule-based)
+ * and writes the prediction to predictions/{readingId}.
+ */
+exports.onNewSensorReading = onDocumentCreated(
+  "sensor_readings/{readingId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const data = snap.data();
+    const readingId = event.params.readingId;
+
+    const sensorPayload = {
+      co2_ppm:     data.co2_ppm     || 420,
+      ch4_ppm:     data.ch4_ppm     || 1.9,
+      temperature: data.temperature || 25,
+      humidity:    data.humidity    || 60,
+      energy_kwh:  data.energy_kwh  || 0,
+      facility_id: data.facility_id || "",
+    };
+
+    let prediction;
+
+    if (RENDER_ML_URL) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        const response = await fetch(`${RENDER_ML_URL}/predict`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(sensorPayload),
+          signal:  controller.signal,
+        });
+        clearTimeout(timeout);
+
+        if (!response.ok) throw new Error(`Render returned ${response.status}`);
+        const result = await response.json();
+        prediction = result.prediction;
+        logger.info("ML prediction stored", { readingId, predicted: prediction?.predicted_co2e_kg });
+      } catch (err) {
+        logger.warn("Render.com unavailable, using rule-based fallback", { err: String(err) });
+        prediction = ruleBasedFallback(sensorPayload).prediction;
+      }
+    } else {
+      logger.warn("RENDER_ML_URL not set, using rule-based fallback");
+      prediction = ruleBasedFallback(sensorPayload).prediction;
+    }
+
+    await db.collection("predictions").doc(readingId).set({
+      reading_id:  readingId,
+      facility_id: data.facility_id || "",
+      device_id:   data.device_id   || "",
+      sensor:      sensorPayload,
+      prediction,
+      timestamp:   data.timestamp   || new Date().toISOString(),
+      createdAt:   admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+);
+
+/**
+ * predictEmissions — HTTP endpoint
  *
- * POST body: { co2_ppm, ch4_ppm, temperature, humidity, energy_kwh,
- *              facility_id?, hour?, month?, is_weekend?, zesa_online? }
+ * Kept for direct testing and Next.js /api/predict fallback.
+ * POST body: { co2_ppm, ch4_ppm, temperature, humidity, energy_kwh, ... }
  */
 exports.predictEmissions = onRequest(
   { cors: true },
@@ -34,34 +97,32 @@ exports.predictEmissions = onRequest(
     }
 
     if (!RENDER_ML_URL) {
-      logger.warn("RENDER_ML_URL not set — returning rule-based fallback");
       res.status(200).json(ruleBasedFallback(req.body));
       return;
     }
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
       const response = await fetch(`${RENDER_ML_URL}/predict`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify(req.body),
+        signal:  controller.signal,
       });
+      clearTimeout(timeout);
 
-      if (!response.ok) {
-        throw new Error(`Render.com returned ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error(`Render returned ${response.status}`);
       const data = await response.json();
       logger.info("ML prediction", { predicted: data?.prediction?.predicted_co2e_kg });
       res.status(200).json(data);
-
     } catch (err) {
-      logger.error("ML service error, falling back to rule-based", { err: String(err) });
+      logger.error("ML service error, using fallback", { err: String(err) });
       res.status(200).json(ruleBasedFallback(req.body));
     }
   }
 );
 
-// GHG Protocol fallback used when Render.com is unavailable
 function ruleBasedFallback(body) {
   const ZESA = 0.92, CH4_GWP = 28, CH4_D = 0.657, CO2_D = 1.977, VOL = 100;
   const co2 = Number(body.co2_ppm)    || 420;
