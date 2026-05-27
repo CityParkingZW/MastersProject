@@ -5,10 +5,25 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-  "functions": {
-    "source": "functions",
-    "runtime": "python312"
-  },
+  "functions": [
+    {
+      "codebase": "default",
+      "source": "functions",
+      "runtime": "python312"
+    },
+    {
+      "source": "functionc-ml",
+      "codebase": "ml",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ],
   "storage": {
     "rules": "storage.rules"
   }
