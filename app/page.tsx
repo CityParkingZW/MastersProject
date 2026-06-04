@@ -65,6 +65,7 @@ export default function KgotsoDashboard() {
   const [forecast,   setForecast]   = useState<ForecastPoint[]>([])
   const [isLive,     setIsLive]     = useState(false)
   const [forecasting, setForecasting] = useState(false)
+  const [forecastModel, setForecastModel] = useState<string>('')
 
   // ── Real-time listener ────────────────────────────────────────────────────
   useEffect(() => {
@@ -97,18 +98,27 @@ export default function KgotsoDashboard() {
     if (currentReadings.length === 0) return
     setForecasting(true)
     try {
+      // Send up to 24 h of history so the model can use the lag_24 feature
+      const window = currentReadings.slice(-24)
       const payload = {
-        readings: currentReadings.slice(-12).map(r => ({
+        readings: window.map(r => ({
           co2_ppm:             r.co2_ppm,
           temperature_celsius: r.temperature_celsius,
           humidity_percent:    r.humidity_percent,
           hour:                r.timestamp.getHours(),
         })),
+        last_timestamp: window[window.length - 1]?.timestamp.toISOString(),
         forecast_hours: 24,
       }
       const res  = await fetch('/api/predict-kgotso', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const json = await res.json()
-      if (json.success) setForecast(json.forecast)
+      if (json.success) {
+        setForecast(json.forecast)
+        const isRender = json.source === 'render-ml'
+        setForecastModel(isRender
+          ? (json.model_version ?? 'Render ML')
+          : 'Local diurnal (Render offline)')
+      }
     } finally {
       setForecasting(false)
     }
@@ -263,7 +273,10 @@ export default function KgotsoDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>CO₂ Forecast — Next 24 Hours</CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">Last 24 h actual + 24 h ML prediction with confidence band</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Last 24 h actual + 24 h ML prediction with confidence band
+                  {forecastModel && <span className="ml-1">· <span className="font-medium">{forecastModel}</span></span>}
+                </p>
               </div>
               <Button variant="outline" size="sm" disabled={forecasting} onClick={() => runForecast(readings)} className="gap-1.5">
                 <RefreshCw className={`h-3.5 w-3.5 ${forecasting ? 'animate-spin' : ''}`} />

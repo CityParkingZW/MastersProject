@@ -65,15 +65,44 @@ interface ForecastPoint {
 export async function POST(request: Request) {
   try {
     const body = await request.json() as {
-      readings:       ReadingInput[]  // recent readings, newest last
-      forecast_hours: number          // how many hours to predict
+      readings:        ReadingInput[]  // recent readings, newest last
+      forecast_hours:  number          // how many hours to predict
+      last_timestamp?: string          // ISO of newest reading (for Render model)
     }
 
     if (!Array.isArray(body.readings) || body.readings.length === 0) {
       return NextResponse.json({ error: 'readings array required' }, { status: 400 })
     }
 
-    const hrs    = Math.min(body.forecast_hours ?? 24, 48)
+    const hrs = Math.min(body.forecast_hours ?? 24, 48)
+
+    // ── Preferred path: the trained Gradient Boosting model on Render ─────────
+    // Uses RENDER_ML_URL from apphosting.yaml (or KGOTSO_ML_URL locally).
+    const renderUrl = process.env.RENDER_ML_URL ?? process.env.KGOTSO_ML_URL
+    if (renderUrl) {
+      try {
+        const res = await fetch(`${renderUrl.replace(/\/$/, '')}/predict`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recent_co2:     body.readings.map(r => r.co2_ppm),
+            last_timestamp: body.last_timestamp ?? null,
+            forecast_hours: hrs,
+          }),
+          // Render free tier can cold-start; allow generous timeout
+          signal: AbortSignal.timeout(30_000),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          return NextResponse.json({ ...data, source: 'render-ml' })
+        }
+        // non-OK → fall through to local model
+      } catch {
+        // network error / cold start timeout → fall through to local model
+      }
+    }
+
+    // ── Fallback: local diurnal model (keeps the app working without Render) ──
     const recent = body.readings.slice(-6)
 
     // Rolling mean of recent CO₂ as the baseline
@@ -105,6 +134,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success:  true,
+      source:   'local-diurnal',
+      model_version: 'Diurnal-Kgotso-fallback',
       baseline_ppm:      Math.round(basePPM),
       forecast_hours:    hrs,
       forecast,

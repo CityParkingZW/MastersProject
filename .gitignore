@@ -74,7 +74,8 @@ serviceAccountKey.json
 #zvema models
 models/
 *.joblib
-# allow the model file inside ml-service so Render.com can use it
+# allow the model files inside ml-service so Render.com can use them
 !ml-service/carbon_predictor_v1.joblib
+!ml-service/kgotso_co2_model.joblib
 .venv/
 node_modules/
