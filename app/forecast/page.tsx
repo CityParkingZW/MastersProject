@@ -16,6 +16,7 @@ import {
   Loader2, TrendingUp, MapPin, Calendar, Wind, Scale,
   FileDown, Code2, Play,
 } from 'lucide-react'
+import { sourceLabel } from '@/lib/sources'
 
 // ── Carbon constants (3,000 m³ Kgotso coverage, Harare 1,483 m) ───────────────
 const MONITORING_VOL_M3  = 3_000
@@ -181,7 +182,7 @@ export default function ForecastReportPage() {
                       onChange={e => setSource(e.target.value)}
                       className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
                     >
-                      {sources.map(s => <option key={s} value={s}>{s}</option>)}
+                      {sources.map(s => <option key={s} value={s}>{sourceLabel(s)}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1">
@@ -242,7 +243,7 @@ export default function ForecastReportPage() {
                   <div>
                     <CardTitle className="flex items-center gap-2"><FileDown className="h-4 w-4" /> CO₂ Forecast Report</CardTitle>
                     <CardDescription className="mt-1">
-                      Source <span className="font-mono">{source}</span> · {startDate} → {endDate} · {horizon} h horizon
+                      Source <span className="font-mono">{sourceLabel(source)}</span> · {startDate} → {endDate} · {horizon} h horizon
                       {ranAt && <> · generated {ranAt.toLocaleString()}</>}
                     </CardDescription>
                   </div>
