@@ -10,8 +10,8 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Legend, PieChart, Pie, Cell,
 } from 'recharts'
-import { TrendingDown, TrendingUp, Leaf, Scale, Activity } from 'lucide-react'
-import { Loader2 } from 'lucide-react'
+import { TrendingDown, TrendingUp, Leaf, Scale, Activity, FileDown, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 // ── Carbon calculation constants (Harare, 1,483 m altitude) ──────────────────
@@ -119,11 +119,16 @@ export default function CarbonAccountingPage() {
       <div className="p-4 sm:p-6 space-y-5 max-w-6xl mx-auto">
 
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Carbon Accounting</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Scope 1 direct CO₂ — Harare monitoring station · {MONITORING_VOL_M3.toLocaleString()} m³ reference volume
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Carbon Accounting</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Scope 1 direct CO₂ — Harare monitoring station · {MONITORING_VOL_M3.toLocaleString()} m³ reference volume
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 print:hidden shrink-0">
+            <FileDown className="h-3.5 w-3.5" /> Print / Save PDF
+          </Button>
         </div>
 
         {/* Summary KPIs */}

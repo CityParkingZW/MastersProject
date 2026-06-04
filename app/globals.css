@@ -173,3 +173,30 @@
 .live-indicator {
   animation: pulse-glow 2s ease-in-out infinite;
 }
+
+/* ── Print styles: clean PDF output for reports ──────────────────────────── */
+@media print {
+  /* Hide app chrome (sidebar, mobile top bar, buttons marked print:hidden) */
+  aside,
+  .print\:hidden {
+    display: none !important;
+  }
+  /* Let content use the full page width */
+  main {
+    overflow: visible !important;
+  }
+  /* Avoid breaking cards across pages where possible */
+  .rounded-lg,
+  .rounded-xl,
+  table {
+    break-inside: avoid;
+  }
+  /* Crisp backgrounds for charts/badges */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body {
+    background: #fff !important;
+  }
+}

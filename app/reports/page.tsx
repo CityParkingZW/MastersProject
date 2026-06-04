@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import {
   CheckCircle, Database, FileText, ShieldCheck,
-  Clock, Plus, Loader2, Wind, Scale, TrendingUp,
+  Clock, Plus, Loader2, Wind, Scale, TrendingUp, FileDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -196,11 +196,16 @@ export default function MRVReportsPage() {
       <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-6">
 
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">MRV Framework</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Monitoring, Reporting &amp; Verification — Kgotso ClimateHealth · Zimbabwe Carbon Monitor
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">MRV Framework</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Monitoring, Reporting &amp; Verification — Kgotso ClimateHealth · Zimbabwe Carbon Monitor
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 print:hidden shrink-0">
+            <FileDown className="h-3.5 w-3.5" /> Print / Save PDF
+          </Button>
         </div>
 
         {/* Overview */}
@@ -284,7 +289,7 @@ export default function MRVReportsPage() {
 
         {/* Generate controls (admin only) */}
         {isAdmin ? (
-          <Card>
+          <Card className="print:hidden">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Select a month to generate</CardTitle>
             </CardHeader>
@@ -354,7 +359,7 @@ export default function MRVReportsPage() {
                         <Badge variant="outline" className="text-xs">Gas: {r.measured_gas}</Badge>
                       </div>
                       {isAdmin && (
-                        <Button variant="outline" size="sm" className="shrink-0"
+                        <Button variant="outline" size="sm" className="shrink-0 print:hidden"
                           onClick={() => { setEditReport(r); setEditSummary(r.summary ?? '') }}>
                           {r.verification_status === 'verified' ? 'Edit' : 'Review & Verify'}
                         </Button>
