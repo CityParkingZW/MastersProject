@@ -74,7 +74,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="p-1 rounded-md bg-primary/10">
               <Leaf className="h-4 w-4 text-primary" />
             </div>
-            <span className="font-semibold text-sm">Carbon Monitor</span>
+            <span className="font-semibold text-sm">Kgotso ClimateHealth</span>
           </div>
         </header>
 

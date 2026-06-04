@@ -5,8 +5,8 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { cn } from '@/lib/utils'
 import {
-  LayoutDashboard, Users, Building2, Leaf,
-  LogOut, ChevronRight, FileText, X, Scale,
+  LayoutDashboard, Users, Leaf, FileText, Scale,
+  LogOut, ChevronRight, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,11 +16,10 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { href: '/',                   label: 'Dashboard',        icon: LayoutDashboard, roles: ['admin', 'operator', 'viewer'] },
-  { href: '/facilities',         label: 'Facilities',       icon: Building2,       roles: ['admin', 'operator', 'viewer'] },
-  { href: '/reports',            label: 'MRV Reports',      icon: FileText,        roles: ['admin', 'operator', 'viewer'] },
-  { href: '/carbon-accounting',  label: 'Carbon Accounting',icon: Scale,           roles: ['admin', 'operator', 'viewer'] },
-  { href: '/users',              label: 'Users',            icon: Users,           roles: ['admin'] },
+  { href: '/',                  label: 'Dashboard',         icon: LayoutDashboard, roles: ['admin', 'operator', 'viewer'] },
+  { href: '/carbon-accounting', label: 'Carbon Accounting', icon: Scale,           roles: ['admin', 'operator', 'viewer'] },
+  { href: '/reports',           label: 'MRV Reports',       icon: FileText,        roles: ['admin', 'operator', 'viewer'] },
+  { href: '/users',             label: 'Users',             icon: Users,           roles: ['admin'] },
 ] as const
 
 const roleBadgeVariant: Record<string, string> = {
@@ -46,8 +45,8 @@ export function Sidebar({ onClose }: SidebarProps = {}) {
           <Leaf className="h-5 w-5 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm leading-none truncate">Carbon Monitor</p>
-          <p className="text-xs text-muted-foreground mt-0.5 truncate">ZCMA MRV Platform</p>
+          <p className="font-semibold text-sm leading-none truncate">Kgotso ClimateHealth</p>
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">Air Quality Monitor</p>
         </div>
         {onClose && (
           <button

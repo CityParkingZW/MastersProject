@@ -1,550 +1,366 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { collection, addDoc, getDocs, query, where, getDoc, doc, onSnapshot, orderBy, limit } from 'firebase/firestore'
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { useAuth } from '@/lib/auth-context'
 import { AppShell } from '@/components/layout/app-shell'
-import { DashboardHeader } from '@/components/dashboard/dashboard-header'
-import { MetricCard } from '@/components/dashboard/metric-card'
-import { SensorGauge } from '@/components/dashboard/sensor-gauge'
-import { AlertList } from '@/components/dashboard/alert-list'
-import { EmissionsChart } from '@/components/dashboard/emissions-chart'
-import { SensorTimeSeries } from '@/components/dashboard/sensor-time-series'
-import { PredictionChart } from '@/components/dashboard/prediction-chart'
-import { CarbonSummary } from '@/components/dashboard/carbon-summary'
-import { MRVReportCard } from '@/components/dashboard/mrv-report-card'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import Link from 'next/link'
 import {
-  Thermometer, Droplets, Wind, Zap, Gauge, Factory,
-  Scale, TrendingUp, TrendingDown, ChevronRight,
-} from 'lucide-react'
+  LineChart, Line, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, CartesianGrid, ReferenceLine,
+  Legend, Area, AreaChart,
+} from 'recharts'
+import { Thermometer, Droplets, Wind, MapPin, Activity, RefreshCw } from 'lucide-react'
 
-import {
-  generateSensorReading,
-  generateHistoricalData,
-  calculateCarbonEmission,
-  generatePredictions,
-  generateDailySummaries,
-  generateAlerts,
-} from '@/lib/simulator'
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-import type { SensorReading, Alert, DailyEmissionSummary, Prediction, MRVReport, Facility, ZCMAProject } from '@/lib/types'
-
-function getCO2Status(r: SensorReading | null): 'critical' | 'warning' | 'normal' {
-  if (!r) return 'normal'
-  if (r.co2_ppm > 700) return 'critical'
-  if (r.co2_ppm > 550) return 'warning'
-  return 'normal'
+interface KgotsoReading {
+  id:                   string
+  source_id:            string
+  timestamp:            Date
+  co2_ppm:              number
+  temperature_celsius:  number
+  humidity_percent:     number
+  data_source?:         string
 }
 
-function getCH4Status(r: SensorReading | null): 'critical' | 'warning' | 'normal' {
-  if (!r) return 'normal'
-  if (r.ch4_ppm > 8) return 'critical'
-  if (r.ch4_ppm > 5) return 'warning'
-  return 'normal'
+interface ForecastPoint {
+  hour_offset:   number
+  predicted_ppm: number
+  lower_ppm:     number
+  upper_ppm:     number
+  carbon_kg_h:   number
 }
 
-function sourceWeight(sourceType: string): number {
-  if (sourceType === 'stationary_combustion') return 0.72
-  if (sourceType === 'process_emissions') return 0.18
-  return 0.1
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const AMBIENT_PPM         = 420
+const MONITORING_VOL_M3   = 3_000
+const HARARE_AIR_DENSITY  = 1.09
+const CO2_SCALE           = (MONITORING_VOL_M3 * HARARE_AIR_DENSITY * (44.01 / 28.97)) / 1e6
+
+function excessKgPerHour(ppm: number) {
+  return Math.max(0, ppm - AMBIENT_PPM) * CO2_SCALE
 }
 
-function buildEmissionSources(
-  fac: Facility | null,
-  scope1Kg: number,
-  scope2Kg: number,
-  toTonne: (kg: number) => number,
-): MRVReport['emissions_by_source'] {
-  if (!fac?.emission_sources) return []
-  return fac.emission_sources
-    .filter(s => s.applicable)
-    .map(s => {
-      const rawKg = s.scope === 1 ? scope1Kg * sourceWeight(s.source_type) : scope2Kg
-      const methodology = s.scope === 2 ? 'ZESA Grid Factor 0.582 kg CO₂e/kWh' : 'GHG Protocol / IPCC 2006'
-      return {
-        source_name:     s.description,
-        emissions_tco2e: toTonne(rawKg),
-        methodology,
-        data_quality:    'measured' as const,
-      }
-    })
+function getAQ(co2: number) {
+  if (co2 < 600)  return { label: 'Good',      bg: 'bg-green-500/10',  text: 'text-green-700 dark:text-green-400',  dot: 'bg-green-500'  }
+  if (co2 < 800)  return { label: 'Moderate',  bg: 'bg-yellow-500/10', text: 'text-yellow-700 dark:text-yellow-400', dot: 'bg-yellow-500' }
+  if (co2 < 1000) return { label: 'Poor',      bg: 'bg-orange-500/10', text: 'text-orange-700 dark:text-orange-400', dot: 'bg-orange-500' }
+  return           { label: 'Very Poor',        bg: 'bg-red-500/10',    text: 'text-red-700 dark:text-red-400',      dot: 'bg-red-500'    }
 }
 
-export default function DashboardPage() {
-  const { appUser } = useAuth()
-  const router = useRouter()
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting')
-  const [esp32Connected, setEsp32Connected] = useState(false)
-  const [timeRange, setTimeRange] = useState('24h')
-  const [currentReading, setCurrentReading] = useState<SensorReading | null>(null)
-  const [historicalData, setHistoricalData] = useState<SensorReading[]>([])
-  const [alerts, setAlerts] = useState<Alert[]>([])
-  const [dailySummaries, setDailySummaries] = useState<DailyEmissionSummary[]>([])
-  const [predictions, setPredictions] = useState<Prediction[]>([])
-  const [mrvReport, setMrvReport] = useState<MRVReport | null>(null)
-  const [mlEmission, setMlEmission] = useState<{ predicted_co2e_kg: number; model_version: string; method: string } | null>(null)
-  const [isGeneratingReport, setIsGeneratingReport] = useState(false)
-  const [facilities, setFacilities] = useState<Facility[]>([])
-  const [reportFacilityId, setReportFacilityId] = useState('')
-  const [facilityProjects, setFacilityProjects] = useState<ZCMAProject[]>([])
+function fmtTime(d: Date) {
+  return `${String(d.getMonth() + 1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:00`
+}
 
-  // Initialize historical/summary data from simulator (always used for charts)
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default function KgotsoDashboard() {
+  const { appUser }    = useAuth()
+  const [readings,   setReadings]   = useState<KgotsoReading[]>([])
+  const [forecast,   setForecast]   = useState<ForecastPoint[]>([])
+  const [isLive,     setIsLive]     = useState(false)
+  const [forecasting, setForecasting] = useState(false)
+
+  // ── Real-time listener ────────────────────────────────────────────────────
   useEffect(() => {
-    const historical = generateHistoricalData(24)
-    setHistoricalData(historical)
-    setDailySummaries(generateDailySummaries(30))
-    setPredictions(generatePredictions(historical, 24))
-    setConnectionStatus('connected')
-  }, [])
-
-  // Poll ESP32 API every 5 seconds for live readings
-  useEffect(() => {
-    const pollESP32 = async () => {
-      try {
-        const res = await fetch('/api/sensor-data')
-        const data = await res.json()
-
-        if (data.connected) {
-          setEsp32Connected(true)
-          const reading: SensorReading = {
-            device_id: 'esp32-001',
-            facility_id: 'FAC001',
-            timestamp: data.received_at,
-            co2_ppm: data.co2_ppm,
-            ch4_ppm: data.ch4_ppm,
-            temperature: data.temperature,
-            humidity: data.humidity,
-            energy_kwh: data.energy_kwh || 0,
-            air_quality_index: Math.round(data.co2_ppm / 10),
-            data_source: 'esp32' as const,
-          }
-          setCurrentReading(reading)
-          setHistoricalData(prev => [...prev, reading].slice(-48))
-          const newAlerts = generateAlerts(reading)
-          if (newAlerts.length > 0) {
-            setAlerts(prev => [...newAlerts, ...prev].slice(0, 20))
-          }
-        } else {
-          setEsp32Connected(false)
+    const q = query(
+      collection(db, 'kgotso_readings'),
+      orderBy('timestamp', 'desc'),
+      limit(168),
+    )
+    return onSnapshot(q, snap => {
+      const docs: KgotsoReading[] = snap.docs.map(d => {
+        const data = d.data()
+        return {
+          id:                  d.id,
+          source_id:           data.source_id ?? 'ixxkut7za9s',
+          timestamp:           data.timestamp?.toDate?.() ?? new Date(),
+          co2_ppm:             data.co2_ppm,
+          temperature_celsius: data.temperature_celsius,
+          humidity_percent:    data.humidity_percent,
+          data_source:         data.data_source,
         }
-      } catch {
-        setEsp32Connected(false)
-      }
-    }
-
-    const interval = setInterval(pollESP32, 5000)
-    pollESP32()
-    return () => clearInterval(interval)
-  }, [])
-
-  // Simulator fallback — only runs when ESP32 is not connected
-  useEffect(() => {
-    if (esp32Connected) return
-
-    const updateInterval = setInterval(() => {
-      const newReading = generateSensorReading()
-      setCurrentReading(newReading)
-      setHistoricalData(prev => [...prev, newReading].slice(-48))
-      const newAlerts = generateAlerts(newReading)
-      if (newAlerts.length > 0) {
-        setAlerts(prev => [...newAlerts, ...prev].slice(0, 20))
-      }
-      if (Math.random() < 0.1) {
-        setHistoricalData(current => {
-          setPredictions(generatePredictions(current, 24))
-          return current
-        })
-      }
-    }, 3000)
-
-    return () => clearInterval(updateInterval)
-  }, [esp32Connected])
-
-  // Load facilities accessible to the current user
-  useEffect(() => {
-    if (!appUser) return
-    getDocs(collection(db, 'facilities')).then(snap => {
-      const all = snap.docs.map(d => ({ ...d.data(), id: d.id }) as Facility)
-      const accessible = appUser.facilityIds[0] === '*'
-        ? all
-        : all.filter(f => appUser.facilityIds.includes(f.id))
-      setFacilities(accessible)
-      if (accessible.length > 0) setReportFacilityId(accessible[0].id)
+      }).reverse()
+      setReadings(docs)
+      const now = Date.now()
+      setIsLive(docs.some(r => now - r.timestamp.getTime() < 5 * 60_000))
     })
-  }, [appUser])
-
-  // Real-time ML predictions from Firestore (written by Cloud Function trigger)
-  useEffect(() => {
-    const q = query(collection(db, 'predictions'), orderBy('createdAt', 'desc'), limit(1))
-    const unsub = onSnapshot(q, (snap) => {
-      if (!snap.empty) {
-        const pred = snap.docs[0].data().prediction
-        if (pred?.predicted_co2e_kg !== undefined) setMlEmission(pred)
-      }
-    }, () => { /* ignore permission errors when not logged in */ })
-    return () => unsub()
   }, [])
 
-  // Load ZCMA projects for the selected facility
-  useEffect(() => {
-    if (!reportFacilityId) return
-    getDocs(query(collection(db, 'zcma_projects'), where('facility_id', '==', reportFacilityId)))
-      .then(snap => setFacilityProjects(snap.docs.map(d => ({ ...d.data(), id: d.id }) as ZCMAProject)))
-  }, [reportFacilityId])
-
-  // Calculate current emissions
-  const currentEmission = currentReading ? calculateCarbonEmission(currentReading) : null
-
-  // Calculate totals
-  const totalEmissionsMTD = dailySummaries.reduce((sum, d) => sum + d.total_co2e_kg, 0)
-  const targetEmissions = 150000 // 150 tonnes target
-  const previousMonthEmissions = totalEmissionsMTD * 1.1 // Simulate 10% reduction
-
-  // Refresh handler
-  const handleRefresh = useCallback(() => {
-    setConnectionStatus('connecting')
-    setTimeout(() => {
-      setHistoricalData(generateHistoricalData(24))
-      setDailySummaries(generateDailySummaries(30))
-      setConnectionStatus('connected')
-    }, 1000)
-  }, [])
-
-  // Alert acknowledgment
-  const handleAcknowledgeAlert = (id: string) => {
-    setAlerts(prev => prev.map(a => a.id === id ? { ...a, acknowledged: true } : a))
-  }
-
-  // Generate MRV report — fetches real daily summaries, saves to Firestore, then navigates
-  const handleGenerateReport = useCallback(async () => {
-    if (!reportFacilityId) return
-    setIsGeneratingReport(true)
+  // ── Forecast trigger ──────────────────────────────────────────────────────
+  const runForecast = useCallback(async (currentReadings: KgotsoReading[]) => {
+    if (currentReadings.length === 0) return
+    setForecasting(true)
     try {
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-      const snap = await getDocs(
-        query(collection(db, 'daily_summaries'), where('facility_id', '==', reportFacilityId))
-      )
-      const summaries = snap.docs
-        .map(d => d.data() as DailyEmissionSummary)
-        .filter(d => d.date >= thirtyDaysAgo)
-        .sort((a, b) => a.date.localeCompare(b.date))
-      const totalKg  = summaries.reduce((s, d) => s + d.total_co2e_kg, 0)
-      const scope1Kg = summaries.reduce((s, d) => s + d.scope1_kg, 0)
-      const scope2Kg = summaries.reduce((s, d) => s + d.scope2_kg, 0)
-      const toTonne  = (kg: number) => Number.parseFloat((kg / 1000).toFixed(3))
-
-      const facSnap = await getDoc(doc(db, 'facilities', reportFacilityId))
-      const fac = facSnap.exists() ? facSnap.data() as Facility : null
-
-      const now = new Date().toISOString()
-      const start = summaries[0]
-        ? new Date(summaries[0].date + 'T00:00:00Z').toISOString()
-        : thirtyDaysAgo + 'T00:00:00Z'
-
-      const emissionSources = buildEmissionSources(fac, scope1Kg, scope2Kg, toTonne)
-
-      const report: Omit<MRVReport, 'report_id'> = {
-        facility_id:           reportFacilityId,
-        reporting_period:      { start, end: now },
-        total_emissions_tco2e: toTonne(totalKg),
-        emissions_by_scope: {
-          scope1: toTonne(scope1Kg),
-          scope2: toTonne(scope2Kg),
-          scope3: 0,
-        },
-        emissions_by_source:  emissionSources,
-        verification_status:  'pending',
-        generated_at:         now,
-        generated_by:         appUser?.uid,
-        zcma_compliant:       fac?.zcma_compliant ?? true,
+      const payload = {
+        readings: currentReadings.slice(-12).map(r => ({
+          co2_ppm:             r.co2_ppm,
+          temperature_celsius: r.temperature_celsius,
+          humidity_percent:    r.humidity_percent,
+          hour:                r.timestamp.getHours(),
+        })),
+        forecast_hours: 24,
       }
-      const docRef = await addDoc(collection(db, 'mrv_reports'), report)
-      setMrvReport({ ...report, report_id: docRef.id })
-      router.push(`/reports/${docRef.id}`)
+      const res  = await fetch('/api/predict-kgotso', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const json = await res.json()
+      if (json.success) setForecast(json.forecast)
     } finally {
-      setIsGeneratingReport(false)
+      setForecasting(false)
     }
-  }, [reportFacilityId, appUser?.uid, router])
+  }, [])
 
-  const co2Status = getCO2Status(currentReading)
-  const ch4Status = getCH4Status(currentReading)
-  const unacknowledgedAlerts = alerts.filter(a => !a.acknowledged)
-  const facilityOptions: ComboboxOption[] = facilities.map(f => ({ value: f.id, label: f.facility_name }))
+  // Auto-run forecast when readings change significantly
+  useEffect(() => {
+    if (readings.length > 0) runForecast(readings)
+  }, [readings.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Carbon net position for selected facility
-  const activeProjectOffsets = facilityProjects
-    .filter(p => p.status === 'active' || p.status === 'verified')
-    .reduce((s, p) => s + p.annual_sequestration_tco2e, 0)
-  const latestEmissionsTonne = mrvReport?.total_emissions_tco2e ?? 0
-  const netCarbon = latestEmissionsTonne - activeProjectOffsets
-  const offsetCoverage = latestEmissionsTonne > 0
-    ? Math.min(100, (activeProjectOffsets / latestEmissionsTonne) * 100)
+  // ── Derived values ────────────────────────────────────────────────────────
+  const latest = readings[readings.length - 1]
+  const aq     = latest ? getAQ(latest.co2_ppm) : null
+
+  const step      = Math.max(1, Math.floor(readings.length / 72))
+  const histData  = readings
+    .filter((_, i) => i % step === 0 || i === readings.length - 1)
+    .map(r => ({ time: fmtTime(r.timestamp), co2: r.co2_ppm, temp: r.temperature_celsius, humidity: r.humidity_percent }))
+
+  // Build combined historical + forecast chart (last 24 h of history + 24 h forecast)
+  const last24 = readings.slice(-24).map(r => ({
+    label:     fmtTime(r.timestamp),
+    actual:    r.co2_ppm,
+    predicted: undefined as number | undefined,
+    lower:     undefined as number | undefined,
+    upper:     undefined as number | undefined,
+  }))
+  const forecastChart = forecast.slice(0, 24).map((f, i) => {
+    const base    = latest?.timestamp ?? new Date()
+    const futureD = new Date(base.getTime() + (i + 1) * 3_600_000)
+    return {
+      label:     fmtTime(futureD),
+      actual:    undefined as number | undefined,
+      predicted: f.predicted_ppm,
+      lower:     f.lower_ppm,
+      upper:     f.upper_ppm,
+    }
+  })
+  const combinedChart = [...last24, ...forecastChart]
+
+  // Monthly carbon footprint estimate (tCO2e)
+  const monthCarbonKg = readings
+    .filter(r => {
+      const now = new Date()
+      return r.timestamp.getMonth() === now.getMonth() && r.timestamp.getFullYear() === now.getFullYear()
+    })
+    .reduce((s, r) => s + excessKgPerHour(r.co2_ppm), 0)
+  const projectedMonthlyTco2e = readings.length > 0
+    ? ((monthCarbonKg / Math.max(readings.length, 1)) * 24 * 30 / 1000)
     : 0
 
+  const co2Min  = readings.length ? Math.min(...readings.map(r => r.co2_ppm))  : 0
+  const co2Max  = readings.length ? Math.max(...readings.map(r => r.co2_ppm))  : 0
+  const tempAvg = readings.length ? Math.round(readings.reduce((s,r)=>s+r.temperature_celsius,0)/readings.length) : 0
+  const humAvg  = readings.length ? Math.round(readings.reduce((s,r)=>s+r.humidity_percent,0)/readings.length)  : 0
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <AppShell>
-    <div className="min-h-screen bg-background">
-      <DashboardHeader
-        facilityName="Test Facility - Harare Industrial Park"
-        connectionStatus={connectionStatus}
-        lastUpdate={currentReading?.timestamp || new Date().toISOString()}
-        timeRange={timeRange}
-        onTimeRangeChange={setTimeRange}
-        onRefresh={handleRefresh}
-        alertCount={unacknowledgedAlerts.length}
-      />
+      <div className="p-4 sm:p-6 space-y-5 max-w-6xl mx-auto">
 
-      <main className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-        {/* Top metrics row */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
-          <MetricCard
-            title="CO2 Level"
-            value={currentReading?.co2_ppm || 0}
-            unit="ppm"
-            trend={currentReading && currentReading.co2_ppm > 500 ? 'up' : 'stable'}
-            trendValue="+2.3%"
-            icon={<Wind className="h-4 w-4" />}
-            status={co2Status}
-          />
-          <MetricCard
-            title="Methane"
-            value={currentReading?.ch4_ppm || 0}
-            unit="ppm"
-            trend="stable"
-            trendValue="-0.5%"
-            icon={<Gauge className="h-4 w-4" />}
-            status={ch4Status}
-          />
-          <MetricCard
-            title="Temperature"
-            value={currentReading?.temperature || 0}
-            unit="°C"
-            trend="stable"
-            icon={<Thermometer className="h-4 w-4" />}
-          />
-          <MetricCard
-            title="Humidity"
-            value={currentReading?.humidity || 0}
-            unit="%"
-            trend="down"
-            trendValue="-3.1%"
-            icon={<Droplets className="h-4 w-4" />}
-          />
-          <MetricCard
-            title="Energy"
-            value={currentReading?.energy_kwh || 0}
-            unit="kWh"
-            trend="up"
-            trendValue="+5.2%"
-            icon={<Zap className="h-4 w-4" />}
-          />
-          <MetricCard
-            title={mlEmission ? 'CO2e (ML)' : 'CO2e Rate'}
-            value={mlEmission?.predicted_co2e_kg ?? currentEmission?.total_co2e_kg ?? 0}
-            unit="kg/hr"
-            trend="stable"
-            icon={<Factory className="h-4 w-4" />}
-            status={(mlEmission?.predicted_co2e_kg ?? currentEmission?.total_co2e_kg ?? 0) > 200 ? 'warning' : 'normal'}
-          />
-        </div>
-
-        {/* Charts — full width */}
-        <Tabs defaultValue="sensors" className="w-full">
-          <TabsList className="mb-4">
-            <TabsTrigger value="sensors">Sensor Data</TabsTrigger>
-            <TabsTrigger value="emissions">Emissions</TabsTrigger>
-            <TabsTrigger value="predictions">AI Predictions</TabsTrigger>
-          </TabsList>
-          <TabsContent value="sensors">
-            <SensorTimeSeries data={historicalData} />
-          </TabsContent>
-          <TabsContent value="emissions">
-            <EmissionsChart data={dailySummaries} />
-          </TabsContent>
-          <TabsContent value="predictions">
-            <PredictionChart predictions={predictions} />
-          </TabsContent>
-        </Tabs>
-
-        {/* Aligned row: Live Sensor Readings + Emissions + Net Carbon */}
-        <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6">
-          {/* Live Sensor Readings — spans 2 cols so inner 2×2 gauge grid has room */}
-          <Card className="md:col-span-2 xl:col-span-2">
-            <CardHeader>
-              <CardTitle>Live Sensor Readings</CardTitle>
-              <CardDescription>Real-time values with threshold indicators</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid sm:grid-cols-2 gap-6">
-                <SensorGauge
-                  label="CO2 Concentration"
-                  value={currentReading?.co2_ppm || 0}
-                  min={300}
-                  max={1000}
-                  unit="ppm"
-                  warningThreshold={600}
-                  criticalThreshold={800}
-                />
-                <SensorGauge
-                  label="Methane (CH4)"
-                  value={currentReading?.ch4_ppm || 0}
-                  min={0}
-                  max={15}
-                  unit="ppm"
-                  warningThreshold={5}
-                  criticalThreshold={10}
-                />
-                <SensorGauge
-                  label="Temperature"
-                  value={currentReading?.temperature || 0}
-                  min={10}
-                  max={45}
-                  unit="°C"
-                  warningThreshold={32}
-                  criticalThreshold={40}
-                />
-                <SensorGauge
-                  label="Energy Consumption"
-                  value={currentReading?.energy_kwh || 0}
-                  min={0}
-                  max={600}
-                  unit="kWh"
-                  warningThreshold={400}
-                  criticalThreshold={550}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Carbon Emissions Summary */}
-          <CarbonSummary
-            currentEmissions={totalEmissionsMTD}
-            targetEmissions={targetEmissions}
-            previousPeriodEmissions={previousMonthEmissions}
-            period="Month"
-          />
-
-          {/* Net Carbon Position */}
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                  <Scale className="h-4 w-4 text-primary" />
-                  Net Carbon Position
-                </CardTitle>
-                <Link href="/carbon-accounting">
-                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
-                    Details <ChevronRight className="ml-1 h-3 w-3" />
-                  </Button>
-                </Link>
-              </div>
-              <CardDescription className="text-xs">
-                {latestEmissionsTonne > 0
-                  ? 'Latest MRV report vs active ZCMA offsets'
-                  : 'Generate an MRV report to see net position'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-md bg-secondary p-2.5">
-                  <p className="text-xs text-muted-foreground">Gross Emissions</p>
-                  <p className="text-base font-semibold tabular-nums">
-                    {latestEmissionsTonne.toFixed(1)}
-                    <span className="text-xs font-normal text-muted-foreground ml-1">tCO₂e</span>
-                  </p>
-                </div>
-                <div className="rounded-md bg-secondary p-2.5">
-                  <p className="text-xs text-muted-foreground">ZCMA Offsets</p>
-                  <p className="text-base font-semibold tabular-nums text-green-600 dark:text-green-400">
-                    {activeProjectOffsets.toFixed(1)}
-                    <span className="text-xs font-normal text-muted-foreground ml-1">tCO₂e</span>
-                  </p>
-                </div>
-              </div>
-
-              {latestEmissionsTonne > 0 && (
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Coverage</span>
-                    <span>{offsetCoverage.toFixed(0)}%</span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-green-500 transition-all"
-                      style={{ width: `${offsetCoverage}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className={`flex items-center justify-between rounded-md p-2.5 ${
-                netCarbon <= 0
-                  ? 'bg-green-500/10 text-green-700 dark:text-green-400'
-                  : 'bg-destructive/10 text-destructive'
-              }`}>
-                <div className="flex items-center gap-1.5 text-xs font-medium">
-                  {netCarbon <= 0
-                    ? <TrendingDown className="h-3.5 w-3.5" />
-                    : <TrendingUp className="h-3.5 w-3.5" />}
-                  Net position
-                </div>
-                <p className="text-sm font-bold tabular-nums">
-                  {netCarbon <= 0 ? '' : '+'}{netCarbon.toFixed(1)} tCO₂e
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* MRV Report + Alerts */}
-        <div className="grid md:grid-cols-3 gap-4 sm:gap-6">
-          <div className="md:col-span-2 space-y-4">
-            {facilities.length > 1 && (
-              <Combobox
-                options={facilityOptions}
-                value={reportFacilityId}
-                onValueChange={setReportFacilityId}
-                placeholder="Select facility…"
-                searchPlaceholder="Search facilities…"
-              />
-            )}
-            <MRVReportCard
-              report={mrvReport}
-              onGenerate={handleGenerateReport}
-              onDownload={() => alert('Downloading PDF...')}
-              isGenerating={isGeneratingReport}
-              isAdmin={appUser?.role === 'admin'}
-            />
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Air Quality Dashboard</h1>
+            <div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-muted-foreground">
+              <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> Harare, Zimbabwe</span>
+              <span className="flex items-center gap-1"><Activity className="h-3.5 w-3.5" /> Kgotso ClimateHealth</span>
+              {latest && <span>Last reading: {fmtTime(latest.timestamp)}</span>}
+            </div>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {aq && (
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium ${aq.bg} ${aq.text}`}>
+                <span className={`h-2 w-2 rounded-full ${aq.dot}`} />
+                Air Quality: {aq.label}
+              </div>
+            )}
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border ${isLive ? 'border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400' : 'border-border text-muted-foreground'}`}>
+              <span className={`h-2 w-2 rounded-full ${isLive ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+              {isLive ? 'Live' : 'Historical'}
+            </div>
+          </div>
+        </div>
 
+        {/* Metric cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                Active Alerts
-                {unacknowledgedAlerts.length > 0 && (
-                  <span className="text-sm font-normal text-muted-foreground">
-                    {unacknowledgedAlerts.length} unacknowledged
-                  </span>
-                )}
+            <CardHeader className="pb-2 pt-4 px-5">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <Wind className="h-4 w-4" /> CO₂
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <AlertList
-                alerts={alerts}
-                onAcknowledge={handleAcknowledgeAlert}
-              />
+            <CardContent className="px-5 pb-4">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-bold tabular-nums">{latest?.co2_ppm ?? '—'}</span>
+                <span className="text-sm text-muted-foreground">ppm</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Min {co2Min} / Max {co2Max}</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2 pt-4 px-5">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <Thermometer className="h-4 w-4" /> Temperature
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-5 pb-4">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-bold tabular-nums">{latest?.temperature_celsius ?? '—'}</span>
+                <span className="text-sm text-muted-foreground">°C</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Avg {tempAvg}°C</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2 pt-4 px-5">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <Droplets className="h-4 w-4" /> Humidity
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-5 pb-4">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-bold tabular-nums">{latest?.humidity_percent ?? '—'}</span>
+                <span className="text-sm text-muted-foreground">%</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Avg {humAvg}%</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2 pt-4 px-5">
+              <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <Activity className="h-4 w-4" /> Carbon Footprint
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-5 pb-4">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-bold tabular-nums">{projectedMonthlyTco2e.toFixed(3)}</span>
+                <span className="text-sm text-muted-foreground">tCO₂e/mo</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Scope 1 projection · {MONITORING_VOL_M3} m³</p>
             </CardContent>
           </Card>
         </div>
-      </main>
-    </div>
+
+        {/* Forecast + history combined */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>CO₂ Forecast — Next 24 Hours</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">Last 24 h actual + 24 h ML prediction with confidence band</p>
+              </div>
+              <Button variant="outline" size="sm" disabled={forecasting} onClick={() => runForecast(readings)} className="gap-1.5">
+                <RefreshCw className={`h-3.5 w-3.5 ${forecasting ? 'animate-spin' : ''}`} />
+                {forecasting ? 'Forecasting…' : 'Re-run'}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="h-72 pr-4">
+            {combinedChart.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+                No data yet — run the seed or replay script.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={combinedChart} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                  <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }} width={40} />
+                  <Tooltip contentStyle={{ fontSize: 12 }} formatter={(v: number, name: string) => [`${v} ppm`, name]} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <ReferenceLine y={600} stroke="#f59e0b" strokeDasharray="4 2" label={{ value: '600 ppm', position: 'insideTopRight', fontSize: 10, fill: '#f59e0b' }} />
+                  <ReferenceLine x={last24.at(-1)?.label} stroke="#94a3b8" strokeDasharray="3 3" label={{ value: 'Now', position: 'insideTopLeft', fontSize: 10, fill: '#94a3b8' }} />
+                  <Line type="monotone" dataKey="actual"    stroke="#3b82f6" dot={false} strokeWidth={2} name="Actual CO₂ (ppm)"    connectNulls={false} />
+                  <Line type="monotone" dataKey="predicted" stroke="#f97316" dot={false} strokeWidth={2} name="Forecast CO₂ (ppm)"  connectNulls={false} strokeDasharray="5 3" />
+                  <Line type="monotone" dataKey="upper"     stroke="#f9731640" dot={false} strokeWidth={1} name="Upper bound"        connectNulls={false} strokeDasharray="2 4" />
+                  <Line type="monotone" dataKey="lower"     stroke="#f9731640" dot={false} strokeWidth={1} name="Lower bound"        connectNulls={false} strokeDasharray="2 4" />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Historical trend */}
+        <div className="grid md:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">CO₂ History ({readings.length} readings)</CardTitle>
+            </CardHeader>
+            <CardContent className="h-52 pr-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={histData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis dataKey="time" tick={{ fontSize: 9 }} interval="preserveStartEnd" />
+                  <YAxis domain={['auto', 'auto']} tick={{ fontSize: 9 }} width={36} />
+                  <Tooltip contentStyle={{ fontSize: 11 }} formatter={(v: number) => [`${v} ppm`, 'CO₂']} />
+                  <ReferenceLine y={600} stroke="#f59e0b" strokeDasharray="4 2" />
+                  <Area type="monotone" dataKey="co2" stroke="#3b82f6" fill="#3b82f620" strokeWidth={1.5} dot={false} name="CO₂ ppm" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Temperature &amp; Humidity</CardTitle>
+            </CardHeader>
+            <CardContent className="h-52 pr-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={histData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis dataKey="time" tick={{ fontSize: 9 }} interval="preserveStartEnd" />
+                  <YAxis yAxisId="t" domain={['auto','auto']} tick={{ fontSize: 9 }} width={30} />
+                  <YAxis yAxisId="h" orientation="right" domain={[0,100]} tick={{ fontSize: 9 }} width={30} />
+                  <Tooltip contentStyle={{ fontSize: 11 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line yAxisId="t" type="monotone" dataKey="temp"     stroke="#ef4444" dot={false} strokeWidth={1.5} name="Temp (°C)"   />
+                  <Line yAxisId="h" type="monotone" dataKey="humidity" stroke="#06b6d4" dot={false} strokeWidth={1.5} name="Humidity (%)" />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Air quality reference */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Indoor CO₂ Reference Levels</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+              {[
+                { range: '< 600 ppm',    label: 'Good',      desc: 'Excellent ventilation', c: 'text-green-600'  },
+                { range: '600–800 ppm',  label: 'Moderate',  desc: 'Consider airing out',   c: 'text-yellow-600' },
+                { range: '800–1000 ppm', label: 'Poor',      desc: 'Open windows',           c: 'text-orange-600' },
+                { range: '> 1000 ppm',   label: 'Very Poor', desc: 'Ventilate immediately',  c: 'text-red-600'    },
+              ].map(({ range, label, desc, c }) => (
+                <div key={label} className="rounded-md border p-3 space-y-1">
+                  <p className={`font-semibold ${c}`}>{label}</p>
+                  <p className="text-xs text-muted-foreground font-mono">{range}</p>
+                  <p className="text-xs text-muted-foreground">{desc}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+      </div>
     </AppShell>
   )
 }

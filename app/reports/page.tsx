@@ -1,342 +1,327 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs, query, orderBy, where, addDoc } from 'firebase/firestore'
+import { useState, useEffect } from 'react'
+import {
+  collection, query, orderBy, getDocs, addDoc,
+  doc, updateDoc, Timestamp,
+} from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { AppShell } from '@/components/layout/app-shell'
 import { useAuth } from '@/lib/auth-context'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
-import {
-  Loader2, FileText, CheckCircle, Clock, XCircle,
-  Search, Eye, Pencil, Plus, Building2,
-} from 'lucide-react'
-import type { MRVReport, Facility, DailyEmissionSummary } from '@/lib/types'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Loader2, FileText, CheckCircle, Clock, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+// ── Carbon calc ────────────────────────────────────────────────────────────────
+const MONITORING_VOL_M3   = 3_000
+const HARARE_AIR_DENSITY  = 1.09
+const CO2_MOL_MASS        = 44.01
+const AIR_MOL_MASS        = 28.97
+const AMBIENT_CO2_PPM     = 420
+const CO2_SCALE           = (MONITORING_VOL_M3 * HARARE_AIR_DENSITY * (CO2_MOL_MASS / AIR_MOL_MASS)) / 1e6
+
+function excessKgH(ppm: number) {
+  return Math.max(0, ppm - AMBIENT_CO2_PPM) * CO2_SCALE
+}
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const SHORT_MONTHS= ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+interface KgotsoReport {
+  id:                    string
+  report_id:             string
+  period_label:          string     // 'June 2023'
+  period_start:          string
+  period_end:            string
+  avg_co2_ppm:           number
+  max_co2_ppm:           number
+  min_co2_ppm:           number
+  total_co2e_tonne:      number
+  reading_count:         number
+  data_completeness_pct: number
+  verification_status:   'pending' | 'verified'
+  summary?:              string
+  methodology_notes?:    string
+  generated_at:          string
+  generated_by?:         string
+}
+
 const statusConfig = {
-  pending:  { icon: Clock,       color: 'text-warning',     bg: 'bg-warning/10 border-warning/30',         label: 'Pending' },
-  verified: { icon: CheckCircle, color: 'text-accent',      bg: 'bg-accent/10 border-accent/30',           label: 'Verified' },
-  rejected: { icon: XCircle,     color: 'text-destructive', bg: 'bg-destructive/10 border-destructive/30', label: 'Rejected' },
+  pending:  { icon: Clock,        color: 'text-yellow-600',  bg: 'bg-yellow-500/10 border-yellow-500/30',  label: 'Pending' },
+  verified: { icon: CheckCircle,  color: 'text-green-600',   bg: 'bg-green-500/10 border-green-500/30',    label: 'Verified' },
 }
 
 export default function ReportsPage() {
   const { appUser } = useAuth()
-  const router = useRouter()
-
-  const [reports, setReports]       = useState<MRVReport[]>([])
-  const [facilities, setFacilities] = useState<Facility[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [generating, setGenerating] = useState(false)
-
-  const [search,           setSearch]           = useState('')
-  const [facilityFilter,   setFacilityFilter]   = useState('all')
-  const [newReportFacility, setNewReportFacility] = useState('')
-
   const isAdmin = appUser?.role === 'admin'
 
-  // Build facilityId → Facility map
-  const facilityMap = useMemo(
-    () => Object.fromEntries(facilities.map(f => [f.id, f])),
-    [facilities]
-  )
+  const [reports,     setReports]     = useState<KgotsoReport[]>([])
+  const [loading,     setLoading]     = useState(true)
+  const [generating,  setGenerating]  = useState(false)
+  const [editReport,  setEditReport]  = useState<KgotsoReport | null>(null)
+  const [editSummary, setEditSummary] = useState('')
+  const [savingEdit,  setSavingEdit]  = useState(false)
 
-  const facilityOptions = useMemo<ComboboxOption[]>(
-    () => facilities.map(f => ({ value: f.id, label: f.facility_name })),
-    [facilities]
-  )
+  // Available months from the dataset
+  const availableMonths: { year: number; month: number; label: string }[] = []
+  const start = new Date(2023, 5, 1)  // June 2023
+  const end   = new Date(2024, 4, 1)  // May 2024
+  for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
+    availableMonths.push({ year: d.getFullYear(), month: d.getMonth() + 1, label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}` })
+  }
 
-  const facilityFilterOptions = useMemo<ComboboxOption[]>(
-    () => [{ value: 'all', label: 'All facilities' }, ...facilities.map(f => ({ value: f.id, label: f.facility_name }))],
-    [facilities]
-  )
+  async function loadReports() {
+    setLoading(true)
+    const snap = await getDocs(query(collection(db, 'kgotso_reports'), orderBy('period_start', 'desc')))
+    setReports(snap.docs.map(d => ({ id: d.id, ...d.data() } as KgotsoReport)))
+    setLoading(false)
+  }
 
-  useEffect(() => {
-    async function load() {
-      // Fetch facilities the user can access
-      const facSnap = await getDocs(collection(db, 'facilities'))
-      const allFacs = facSnap.docs.map(d => ({ ...d.data(), id: d.id }) as Facility)
+  useEffect(() => { loadReports() }, [])
 
-      const accessibleFacs = appUser?.facilityIds[0] === '*'
-        ? allFacs
-        : allFacs.filter(f => appUser?.facilityIds.includes(f.id))
-
-      setFacilities(accessibleFacs)
-      if (accessibleFacs.length > 0) setNewReportFacility(accessibleFacs[0].id)
-
-      // Fetch reports — filter by accessible facilities
-      const rSnap = await getDocs(
-        query(collection(db, 'mrv_reports'), orderBy('generated_at', 'desc'))
-      )
-      const accessibleIds = new Set(accessibleFacs.map(f => f.id))
-      const allReports = rSnap.docs
-        .map(d => ({ ...d.data(), report_id: d.id }) as MRVReport)
-        .filter(r => appUser?.facilityIds[0] === '*' || accessibleIds.has(r.facility_id))
-
-      setReports(allReports)
-      setLoading(false)
-    }
-    load()
-  }, [appUser])
-
-  const filtered = useMemo(() => reports.filter(r => {
-    const facName = facilityMap[r.facility_id]?.facility_name ?? r.facility_id
-    const matchSearch = (
-      facName.toLowerCase().includes(search.toLowerCase()) ||
-      r.report_id.toLowerCase().includes(search.toLowerCase())
-    )
-    const matchFacility = facilityFilter === 'all' || r.facility_id === facilityFilter
-    return matchSearch && matchFacility
-  }), [reports, search, facilityFilter, facilityMap])
-
-  // Group filtered reports by facility
-  const grouped = useMemo(() => {
-    const map = new Map<string, MRVReport[]>()
-    for (const r of filtered) {
-      const existing = map.get(r.facility_id) ?? []
-      map.set(r.facility_id, [...existing, r])
-    }
-    return map
-  }, [filtered])
-
-  async function handleGenerateReport() {
-    if (!newReportFacility) return
-    const fac = facilityMap[newReportFacility]
-    if (!fac) return
-
+  async function generateReport(year: number, month: number) {
     setGenerating(true)
     try {
-      // Fetch daily summaries for the facility — single where to avoid composite index
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-        .toISOString().split('T')[0]
-
+      // Fetch all readings for this month
       const snap = await getDocs(
-        query(collection(db, 'daily_summaries'), where('facility_id', '==', newReportFacility))
+        query(collection(db, 'kgotso_readings'), orderBy('timestamp', 'asc'))
       )
+      const rows = snap.docs
+        .map(d => {
+          const data = d.data()
+          const ts   = data.timestamp?.toDate?.() as Date | undefined
+          if (!ts || typeof data.co2_ppm !== 'number') return null
+          if (ts.getFullYear() !== year || ts.getMonth() + 1 !== month) return null
+          return { ppm: data.co2_ppm as number }
+        })
+        .filter(Boolean) as { ppm: number }[]
 
-      const summaries = snap.docs
-        .map(d => d.data() as DailyEmissionSummary)
-        .filter(d => d.date >= thirtyDaysAgo)
-        .sort((a, b) => a.date.localeCompare(b.date))
-      const totalKg   = summaries.reduce((s, d) => s + d.total_co2e_kg, 0)
-      const scope1Kg  = summaries.reduce((s, d) => s + d.scope1_kg, 0)
-      const scope2Kg  = summaries.reduce((s, d) => s + d.scope2_kg, 0)
-      const toTonne   = (kg: number) => parseFloat((kg / 1000).toFixed(3))
-
-      const now = new Date().toISOString()
-      const start = summaries[0]
-        ? new Date(summaries[0].date + 'T00:00:00Z').toISOString()
-        : thirtyDaysAgo + 'T00:00:00Z'
-
-      const report: Omit<MRVReport, 'report_id'> = {
-        facility_id:          newReportFacility,
-        reporting_period:     { start, end: now },
-        total_emissions_tco2e: toTonne(totalKg),
-        emissions_by_scope: {
-          scope1: toTonne(scope1Kg),
-          scope2: toTonne(scope2Kg),
-          scope3: 0,
-        },
-        emissions_by_source: fac.emission_sources
-          .filter(s => s.applicable)
-          .map(s => ({
-            source_name:      s.description,
-            emissions_tco2e:  toTonne(
-              s.scope === 1
-                ? scope1Kg * (s.source_type === 'stationary_combustion' ? 0.72 : s.source_type === 'process_emissions' ? 0.18 : 0.10)
-                : scope2Kg
-            ),
-            methodology:  s.scope === 2 ? 'ZESA Grid Factor 0.582 kg CO₂e/kWh' : 'GHG Protocol / IPCC 2006',
-            data_quality: 'measured' as const,
-          })),
-        verification_status: 'pending',
-        generated_at:        now,
-        generated_by:        appUser?.uid,
-        zcma_compliant:      fac.zcma_compliant,
+      if (rows.length === 0) {
+        alert(`No data found for ${MONTH_NAMES[month-1]} ${year}.`)
+        return
       }
 
-      const docRef = await addDoc(collection(db, 'mrv_reports'), report)
-      router.push(`/reports/${docRef.id}`)
+      const ppms       = rows.map(r => r.ppm)
+      const avg_ppm    = Math.round(ppms.reduce((s,v)=>s+v,0) / ppms.length)
+      const max_ppm    = Math.max(...ppms)
+      const min_ppm    = Math.min(...ppms)
+      const co2e_kg    = rows.reduce((s,r)=>s+excessKgH(r.ppm),0)
+      const completeness = Math.min(100, Math.round((rows.length / 720) * 100))
+
+      const startDate = new Date(year, month-1, 1)
+      const endDate   = new Date(year, month, 0)
+      const reportId  = `KGOTSO-MRV-${year}-${String(month).padStart(2,'0')}`
+
+      await addDoc(collection(db, 'kgotso_reports'), {
+        report_id:             reportId,
+        period_label:          `${MONTH_NAMES[month-1]} ${year}`,
+        period_start:          startDate.toISOString().slice(0,10),
+        period_end:            endDate.toISOString().slice(0,10),
+        avg_co2_ppm:           avg_ppm,
+        max_co2_ppm:           max_ppm,
+        min_co2_ppm:           min_ppm,
+        total_co2e_tonne:      Number((co2e_kg / 1000).toFixed(6)),
+        reading_count:         rows.length,
+        data_completeness_pct: completeness,
+        verification_status:   'pending',
+        summary:               '',
+        methodology_notes:     `Scope 1 direct CO₂. Monitoring volume: ${MONITORING_VOL_M3} m³. Harare altitude 1,483 m (air density 1.09 kg/m³). Ambient baseline: 420 ppm. Excess CO₂ = max(0, ppm − 420) × ${MONITORING_VOL_M3} × 1.09 × (44.01/28.97) / 10⁶ kg/h.`,
+        generated_at:          new Date().toISOString(),
+        generated_by:          appUser?.uid ?? 'system',
+      })
+
+      await loadReports()
     } finally {
       setGenerating(false)
     }
   }
 
+  async function saveEdit() {
+    if (!editReport) return
+    setSavingEdit(true)
+    await updateDoc(doc(db, 'kgotso_reports', editReport.id), {
+      summary:             editSummary,
+      verification_status: 'verified',
+    })
+    setSavingEdit(false)
+    setEditReport(null)
+    await loadReports()
+  }
+
+  // Which months already have a report
+  const reportedKeys = new Set(reports.map(r => r.period_start?.slice(0,7)))
+
+  if (loading) {
+    return (
+      <AppShell>
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </AppShell>
+    )
+  }
+
   return (
     <AppShell>
-      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-6xl w-full">
+      <div className="p-4 sm:p-6 space-y-5 max-w-5xl mx-auto">
 
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <FileText className="h-6 w-6 text-primary" />
-              MRV Reports
-            </h1>
+            <h1 className="text-2xl font-bold tracking-tight">MRV Reports</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              ZCMA-compliant reports — one per facility per reporting period
+              Monitoring, Reporting &amp; Verification — Kgotso ClimateHealth · Harare
             </p>
           </div>
-
-          {/* Generate new report — admin / operator */}
-          {(isAdmin || appUser?.role === 'operator') && facilities.length > 0 && (
-            <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-2 w-full sm:w-auto">
-              <Combobox
-                options={facilityOptions}
-                value={newReportFacility}
-                onValueChange={setNewReportFacility}
-                placeholder="Select facility…"
-                searchPlaceholder="Search facilities…"
-                className="w-full xs:w-52"
-              />
-              <Button onClick={handleGenerateReport} disabled={generating || !newReportFacility} className="shrink-0">
-                {generating
-                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating…</>
-                  : <><Plus   className="mr-2 h-4 w-4" />New Report</>}
-              </Button>
-            </div>
-          )}
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-col xs:flex-row items-stretch xs:items-center gap-3">
-          <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search reports…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-9 w-full"
-            />
-          </div>
-          <Combobox
-            options={facilityFilterOptions}
-            value={facilityFilter}
-            onValueChange={setFacilityFilter}
-            placeholder="All facilities"
-            searchPlaceholder="Search facilities…"
-            className="w-full xs:w-52"
-          />
-        </div>
-
-        {/* Content */}
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
-        ) : grouped.size === 0 ? (
+        {/* Generate new report */}
+        {isAdmin && (
           <Card>
-            <CardContent className="py-16 text-center text-muted-foreground">
-              <FileText className="h-12 w-12 mx-auto mb-3 opacity-30" />
-              <p className="font-medium">No reports found</p>
-              <p className="text-sm mt-1">Select a facility above and click New Report to generate one.</p>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Generate Report</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground mb-3">Select a month to compute statistics and create a new MRV report.</p>
+              <div className="flex flex-wrap gap-2">
+                {availableMonths.map(({ year, month, label }) => {
+                  const key   = `${year}-${String(month).padStart(2,'0')}`
+                  const exists = reportedKeys.has(key)
+                  return (
+                    <Button
+                      key={key}
+                      variant={exists ? 'secondary' : 'outline'}
+                      size="sm"
+                      disabled={generating || exists}
+                      onClick={() => generateReport(year, month)}
+                      className="text-xs"
+                    >
+                      {generating ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plus className="h-3 w-3 mr-1" />}
+                      {label}
+                      {exists && ' ✓'}
+                    </Button>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Report list */}
+        {reports.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center py-16 gap-3 text-muted-foreground">
+              <FileText className="h-8 w-8" />
+              <p>No reports yet. Click a month above to generate the first one.</p>
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-8">
-            {Array.from(grouped.entries()).map(([facId, facReports]) => {
-              const fac = facilityMap[facId]
+          <div className="space-y-3">
+            {reports.map(r => {
+              const sc = statusConfig[r.verification_status] ?? statusConfig.pending
+              const Icon = sc.icon
               return (
-                <div key={facId}>
-                  {/* Facility group header */}
-                  <div className="flex items-center gap-3 mb-3">
-                    <Building2 className="h-4 w-4 text-primary shrink-0" />
-                    <Link
-                      href={`/facilities/${facId}`}
-                      className="font-semibold text-sm hover:underline hover:text-primary"
-                    >
-                      {fac?.facility_name ?? facId}
-                    </Link>
-                    {fac && (
-                      <span className="text-xs text-muted-foreground">
-                        {fac.province} · {fac.city_town}
-                      </span>
-                    )}
-                    <Badge variant="outline" className="text-xs ml-auto">
-                      {facReports.length} report{facReports.length !== 1 ? 's' : ''}
-                    </Badge>
-                  </div>
+                <Card key={r.id}>
+                  <CardContent className="pt-5 pb-4 px-5">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      {/* Left: metadata */}
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold">{r.period_label}</span>
+                          <span className="text-xs text-muted-foreground font-mono">{r.report_id}</span>
+                          <Badge variant="outline" className={cn('text-xs', sc.bg, sc.color)}>
+                            <Icon className="h-3 w-3 mr-1" />{sc.label}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1 text-sm mt-2">
+                          <div>
+                            <span className="text-muted-foreground text-xs">Avg CO₂</span>
+                            <p className="font-medium tabular-nums">{r.avg_co2_ppm} ppm</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground text-xs">Max CO₂</span>
+                            <p className="font-medium tabular-nums">{r.max_co2_ppm} ppm</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground text-xs">Carbon footprint</span>
+                            <p className="font-medium tabular-nums">{r.total_co2e_tonne.toFixed(4)} tCO₂e</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground text-xs">Data completeness</span>
+                            <p className={cn('font-medium tabular-nums', r.data_completeness_pct >= 80 ? 'text-green-600' : 'text-yellow-600')}>{r.data_completeness_pct}%</p>
+                          </div>
+                        </div>
+                        {r.summary && (
+                          <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{r.summary}</p>
+                        )}
+                      </div>
 
-                  <div className="space-y-2">
-                    {facReports.map(report => {
-                      const st = statusConfig[report.verification_status]
-                      const StatusIcon = st.icon
-                      return (
-                        <Card key={report.report_id} className="hover:border-primary/40 transition-colors">
-                          <CardContent className="p-3 sm:p-4">
-                            {/* Top row: ID/period + status + action */}
-                            <div className="flex items-start justify-between gap-3 flex-wrap">
-                              <div className="space-y-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-mono text-sm font-semibold truncate">{report.report_id}</span>
-                                  {report.zcma_compliant && (
-                                    <Badge variant="outline" className="bg-accent/10 text-accent border-accent/30 text-xs shrink-0">
-                                      ZCMA ✓
-                                    </Badge>
-                                  )}
-                                </div>
-                                <p className="text-xs text-muted-foreground font-mono">
-                                  {new Date(report.reporting_period.start).toLocaleDateString()} — {new Date(report.reporting_period.end).toLocaleDateString()}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  Generated {new Date(report.generated_at).toLocaleString()}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <div className={cn(
-                                  'flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium',
-                                  st.bg, st.color
-                                )}>
-                                  <StatusIcon className="h-3.5 w-3.5" />
-                                  {st.label}
-                                </div>
-                                <Link href={`/reports/${report.report_id}`}>
-                                  <Button variant="outline" size="sm" className="gap-1.5 shrink-0">
-                                    {isAdmin
-                                      ? <><Pencil className="h-3.5 w-3.5" />Edit</>
-                                      : <><Eye   className="h-3.5 w-3.5" />View</>}
-                                  </Button>
-                                </Link>
-                              </div>
-                            </div>
+                      {/* Right: actions */}
+                      {isAdmin && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={() => { setEditReport(r); setEditSummary(r.summary ?? '') }}
+                        >
+                          {r.verification_status === 'verified' ? 'Edit' : 'Review & Verify'}
+                        </Button>
+                      )}
+                    </div>
 
-                            {/* Emission totals row */}
-                            <div className="mt-3 pt-3 border-t border-border grid grid-cols-3 gap-2 text-center">
-                              <div>
-                                <p className="text-xs text-muted-foreground">Total</p>
-                                <p className="font-mono font-semibold text-sm">{report.total_emissions_tco2e.toFixed(2)}</p>
-                                <p className="text-xs text-muted-foreground">tCO2e</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-muted-foreground">Scope 1</p>
-                                <p className="font-mono text-sm">{report.emissions_by_scope.scope1.toFixed(2)}t</p>
-                              </div>
-                              <div>
-                                <p className="text-xs text-muted-foreground">Scope 2</p>
-                                <p className="font-mono text-sm">{report.emissions_by_scope.scope2.toFixed(2)}t</p>
-                              </div>
-                            </div>
-
-                            {report.summary && (
-                              <p className="mt-3 text-xs sm:text-sm text-muted-foreground border-t border-border pt-3 line-clamp-2">
-                                {report.summary}
-                              </p>
-                            )}
-                          </CardContent>
-                        </Card>
-                      )
-                    })}
-                  </div>
-                </div>
+                    {/* Methodology note (collapsed) */}
+                    <details className="mt-3">
+                      <summary className="text-xs text-muted-foreground cursor-pointer select-none hover:text-foreground">
+                        Methodology notes
+                      </summary>
+                      <p className="text-xs text-muted-foreground mt-1">{r.methodology_notes}</p>
+                    </details>
+                  </CardContent>
+                </Card>
               )
             })}
           </div>
         )}
+
+        {/* Edit / verify dialog */}
+        <Dialog open={!!editReport} onOpenChange={open => { if (!open) setEditReport(null) }}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Review Report — {editReport?.period_label}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><span className="text-muted-foreground">Avg CO₂</span><p className="font-medium">{editReport?.avg_co2_ppm} ppm</p></div>
+                <div><span className="text-muted-foreground">Max CO₂</span><p className="font-medium">{editReport?.max_co2_ppm} ppm</p></div>
+                <div><span className="text-muted-foreground">Carbon footprint</span><p className="font-medium">{editReport?.total_co2e_tonne.toFixed(4)} tCO₂e</p></div>
+                <div><span className="text-muted-foreground">Data completeness</span><p className="font-medium">{editReport?.data_completeness_pct}%</p></div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="summary">Executive Summary</Label>
+                <Textarea
+                  id="summary"
+                  rows={5}
+                  value={editSummary}
+                  onChange={e => setEditSummary(e.target.value)}
+                  placeholder="Describe the monitoring period, key findings, and any anomalies…"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditReport(null)}>Cancel</Button>
+              <Button disabled={savingEdit} onClick={saveEdit}>
+                {savingEdit && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Verify &amp; Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </AppShell>
   )
