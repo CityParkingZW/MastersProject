@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
 import { cn } from '@/lib/utils'
 import {
-  LayoutDashboard, Users, Leaf, FileText, Scale,
+  LayoutDashboard, Users, Leaf, FileText, Scale, TrendingUp,
   LogOut, ChevronRight, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ interface SidebarProps {
 
 const navItems = [
   { href: '/',                  label: 'Dashboard',         icon: LayoutDashboard, roles: ['admin', 'operator', 'viewer'] },
+  { href: '/forecast',          label: 'Forecast Report',   icon: TrendingUp,      roles: ['admin', 'operator', 'viewer'] },
   { href: '/carbon-accounting', label: 'Carbon Accounting', icon: Scale,           roles: ['admin', 'operator', 'viewer'] },
   { href: '/reports',           label: 'MRV Reports',       icon: FileText,        roles: ['admin', 'operator', 'viewer'] },
   { href: '/users',             label: 'Users',             icon: Users,           roles: ['admin'] },
