@@ -26,7 +26,12 @@
       "Bash(curl -s http://127.0.0.1:8098/)",
       "Bash(curl -s -X POST http://127.0.0.1:8098/kgotso/predict -H \"Content-Type: application/json\" -d \"{\\\\\"recent_co2\\\\\":[412,410,409,411,415,420,425,428,430,427,422,418],\\\\\"last_timestamp\\\\\":\\\\\"2024-05-31T23:00:00\\\\\",\\\\\"forecast_hours\\\\\":6}\")",
       "Bash(curl -s -X POST http://127.0.0.1:8098/industrial/predict -H \"Content-Type: application/json\" -d \"{\\\\\"co2_mg_m3\\\\\":900,\\\\\"ch4_mg_m3\\\\\":5,\\\\\"temperature\\\\\":25,\\\\\"humidity\\\\\":50,\\\\\"energy_kwh\\\\\":120}\")",
-      "Bash(curl -s -X POST http://127.0.0.1:8098/predict -H \"Content-Type: application/json\" -d \"{\\\\\"recent_co2\\\\\":[420,422,418],\\\\\"forecast_hours\\\\\":2}\")"
+      "Bash(curl -s -X POST http://127.0.0.1:8098/predict -H \"Content-Type: application/json\" -d \"{\\\\\"recent_co2\\\\\":[420,422,418],\\\\\"forecast_hours\\\\\":2}\")",
+      "Bash(curl -s --max-time 90 https://kgotso-ml-harare.onrender.com/)",
+      "Bash(curl -s --max-time 30 -X POST https://kgotso-ml-harare.onrender.com/kgotso/predict -H \"Content-Type: application/json\" -d \"{\\\\\"recent_co2\\\\\":[412,410,409,411,415,420,425,428,430,427,422,418],\\\\\"last_timestamp\\\\\":\\\\\"2024-05-31T23:00:00\\\\\",\\\\\"forecast_hours\\\\\":4}\")",
+      "Bash(PYTHONIOENCODING=utf-8 python -m uvicorn main:app --host 127.0.0.1 --port 8097)",
+      "Bash(curl -s http://127.0.0.1:8097/)",
+      "Bash(curl -s -X POST http://127.0.0.1:8097/kgotso/compare -H \"Content-Type: application/json\" -d \"{\\\\\"recent_co2\\\\\":[412,410,409,411,415,420,425,428,430,427,422,418,416,414,413,412,411,413,417,422,419,415,413,412],\\\\\"last_timestamp\\\\\":\\\\\"2024-05-31T23:00:00\\\\\",\\\\\"forecast_hours\\\\\":6}\")"
     ]
   }
 }

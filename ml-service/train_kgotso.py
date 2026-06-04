@@ -144,33 +144,43 @@ gbr   = evaluate("GradientBoosting",
                                            random_state=42),
                  X_train, X_test)
 
+# ── 5c. Seasonal-Naïve (24 h) baseline: prediction = value 24 h earlier ────────
+lag24_idx = FEATURE_NAMES.index("lag_24")
+naive_pred = X_test[:, lag24_idx]
+naive = {
+    "name": "Seasonal-Naive",
+    "r2":   r2_score(y_test, naive_pred),
+    "rmse": math.sqrt(mean_squared_error(y_test, naive_pred)),
+    "mae":  mean_absolute_error(y_test, naive_pred),
+}
+log("train", f"{'Seasonal-Naive':18s} R2={naive['r2']:.4f}  RMSE={naive['rmse']:6.2f} ppm  MAE={naive['mae']:6.2f} ppm")
+
 best = min([ridge, gbr], key=lambda m: m["rmse"])
 log("select", f"Best model: {best['name']} (RMSE {best['rmse']:.2f} ppm)")
 
-# ── 6. Feature importance / coefficients ───────────────────────────────────────
-if best["name"] == "Ridge":
-    importances = dict(zip(FEATURE_NAMES, [round(float(c), 4) for c in best["model"].coef_]))
-    log("explain", "Ridge coefficients (scaled space):")
-else:
-    importances = dict(zip(FEATURE_NAMES, [round(float(c), 4) for c in best["model"].feature_importances_]))
-    log("explain", "GradientBoosting feature importances:")
+# ── 6. Feature importance (best model) ─────────────────────────────────────────
+importances = dict(zip(FEATURE_NAMES, [round(float(c), 4) for c in gbr["model"].feature_importances_]))
+log("explain", "GradientBoosting feature importances:")
 for f, v in sorted(importances.items(), key=lambda kv: -abs(kv[1])):
     print(f"         {f:18s} {v:+.4f}")
 
-# ── 7. Persist ─────────────────────────────────────────────────────────────────
-# Ridge needs the scaler; GBR doesn't, but we store it either way and main.py
-# applies it only for the Ridge path. We record which the model expects.
+def _m(d):
+    return {"r2": round(d["r2"], 4), "rmse": round(d["rmse"], 4), "mae": round(d["mae"], 4)}
+
+# ── 7. Persist ALL models for comparison ───────────────────────────────────────
 package = {
-    "model":         best["model"],
-    "scaler":        scaler,
     "feature_names": FEATURE_NAMES,
-    "needs_scaler":  best["name"] == "Ridge",
-    "metrics": {
-        "r2":   round(best["r2"], 4),
-        "rmse": round(best["rmse"], 4),
-        "mae":  round(best["mae"], 4),
-        "model_type": best["name"],
+    "scaler":        scaler,
+    "best":          "gbr",
+    "models": {
+        "gbr":   {"estimator": gbr["model"],   "needs_scaler": False, "label": "Gradient Boosting",   "metrics": _m(gbr)},
+        "ridge": {"estimator": ridge["model"], "needs_scaler": True,  "label": "Ridge Regression",    "metrics": _m(ridge)},
+        "seasonal_naive": {"estimator": None,  "needs_scaler": False, "label": "Seasonal-Naive (24h)", "metrics": _m(naive)},
     },
+    # Back-compat: keep top-level single-model keys (best = GBR) for older callers
+    "model":         gbr["model"],
+    "needs_scaler":  False,
+    "metrics":       {**_m(gbr), "model_type": "GradientBoosting"},
     "meta": {
         "target":        "co2_ppm (hour t)",
         "lags":          LAGS,
@@ -188,4 +198,4 @@ package = {
 joblib.dump(package, OUT_PATH)
 log("save", f"Wrote {OUT_PATH}")
 log("save", f"sklearn {package['meta']['sklearn']} | numpy {package['meta']['numpy']}")
-print("\nMETRICS_JSON " + json.dumps(package["metrics"]))
+print("\nMETRICS_JSON " + json.dumps({k: v["metrics"] for k, v in package["models"].items()}))
