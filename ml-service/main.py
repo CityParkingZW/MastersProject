@@ -1,27 +1,26 @@
 """
-Kgotso ClimateHealth CO2 Forecast Service
-==========================================
-FastAPI app (deployed on Render.com) serving the autoregressive hourly CO2
-forecast model trained on the Harare monitoring-station dataset.
+Harare ML Service — unified app serving TWO models
+====================================================
+One FastAPI deployment, two independent models mounted as routers:
 
-Endpoints:
-  GET  /            health + model metrics
-  POST /predict     iterative N-hour CO2 forecast + carbon footprint
+  /industrial/predict   legacy ZCMA Ridge model  (CO2e kg from industrial sensors)
+  /kgotso/predict        Kgotso GBR CO2 forecaster (hourly ppm forecast + carbon)
+  /predict               alias → /kgotso/predict  (backward compatibility)
+  /                       health + metrics for both models
 
-The model predicts CO2[t] from recent lags (1/2/3/24 h) and diurnal/seasonal
-calendar features, so forecasts are produced by feeding predictions back in.
+Both joblib models load at startup. Keeping them in one service means a single
+Render web service and URL serves the old and new project versions at once.
 """
 
-import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-import joblib
-import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
-app = FastAPI(title="Kgotso CO2 Forecast Service", version="2.0.0")
+import model_industrial
+import model_kgotso
+
+app = FastAPI(title="Harare ML Service", version="3.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,135 +29,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Load model once at startup ────────────────────────────────────────────────
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "kgotso_co2_model.joblib")
-_pkg = joblib.load(MODEL_PATH)
-_model         = _pkg["model"]
-_scaler        = _pkg["scaler"]
-_feature_names = _pkg["feature_names"]
-_needs_scaler  = _pkg.get("needs_scaler", False)
-_metrics       = _pkg.get("metrics", {})
-_meta          = _pkg.get("meta", {})
-
-RAINY_MONTHS = set(_meta.get("rainy_months", [11, 12, 1, 2, 3]))
-
-# ── Carbon constants (confirmed: 3,000 m³ Kgotso coverage area, Harare 1,483 m) ─
-MONITORING_VOL_M3  = 3_000
-HARARE_AIR_DENSITY = 1.09       # kg/m³ at altitude
-CO2_MOL_MASS       = 44.01
-AIR_MOL_MASS       = 28.97
-AMBIENT_CO2_PPM    = 420.0
-CO2_SCALE          = (MONITORING_VOL_M3 * HARARE_AIR_DENSITY * (CO2_MOL_MASS / AIR_MOL_MASS)) / 1e6
-#  kg CO2 per ppm of excess, per hour, over the monitored volume (~0.004968)
+app.include_router(model_industrial.router)
+app.include_router(model_kgotso.router)
 
 
-def excess_kg_per_hour(co2_ppm: float) -> float:
-    return max(0.0, co2_ppm - AMBIENT_CO2_PPM) * CO2_SCALE
-
-
-# ── Request / response schemas ─────────────────────────────────────────────────
-class ForecastRequest(BaseModel):
-    recent_co2:     list[float]      # hourly ppm, oldest first, newest last (>=1)
-    last_timestamp: str | None = None  # ISO8601 of newest reading (Harare local); defaults to now
-    forecast_hours: int = 24
-
-
-def build_feature_row(hist: list[float], when: datetime) -> np.ndarray:
-    """Construct one feature vector for the hour `when`, given history `hist`
-    (list of hourly ppm up to the hour BEFORE `when`, oldest..newest)."""
-    def lag(n):
-        return hist[-n] if len(hist) >= n else hist[0]
-
-    roll_3 = float(np.mean(hist[-3:])) if len(hist) >= 1 else hist[-1]
-    roll_6 = float(np.mean(hist[-6:])) if len(hist) >= 1 else hist[-1]
-
-    h, m, dow = when.hour, when.month, when.weekday()
-    feat = {
-        "lag_1":  lag(1),
-        "lag_2":  lag(2),
-        "lag_3":  lag(3),
-        "lag_24": lag(24),
-        "roll_3": roll_3,
-        "roll_6": roll_6,
-        "hour_sin":  np.sin(2 * np.pi * h / 24),
-        "hour_cos":  np.cos(2 * np.pi * h / 24),
-        "month_sin": np.sin(2 * np.pi * m / 12),
-        "month_cos": np.cos(2 * np.pi * m / 12),
-        "dow_sin":   np.sin(2 * np.pi * dow / 7),
-        "dow_cos":   np.cos(2 * np.pi * dow / 7),
-        "is_rainy_season": 1.0 if m in RAINY_MONTHS else 0.0,
-    }
-    return np.array([feat[f] for f in _feature_names]).reshape(1, -1)
-
-
-def predict_one(hist: list[float], when: datetime) -> float:
-    X = build_feature_row(hist, when)
-    if _needs_scaler:
-        X = _scaler.transform(X)
-    return float(_model.predict(X)[0])
+# ── Backward-compatible alias: /predict → kgotso forecast ──────────────────────
+@app.post("/predict")
+def predict_alias(req: model_kgotso.ForecastRequest):
+    return model_kgotso.predict(req)
 
 
 @app.get("/")
 def health():
     return {
         "status":  "ok",
-        "service": "Kgotso CO2 Forecast",
-        "model":   _metrics.get("model_type", "unknown"),
-        "metrics": _metrics,
-        "meta":    _meta,
-        "carbon": {
-            "monitoring_vol_m3": MONITORING_VOL_M3,
-            "ambient_ppm":       AMBIENT_CO2_PPM,
-            "kg_per_ppm_hour":   round(CO2_SCALE, 6),
+        "service": "Harare ML Service (dual-model)",
+        "models": {
+            "industrial": model_industrial.info(),
+            "kgotso":     model_kgotso.info(),
         },
+        "routes": {
+            "industrial_predict": "/industrial/predict",
+            "kgotso_predict":     "/kgotso/predict",
+            "alias":              "/predict (→ kgotso)",
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-
-
-@app.post("/predict")
-def predict(req: ForecastRequest):
-    try:
-        if not req.recent_co2:
-            raise ValueError("recent_co2 must contain at least one reading")
-
-        hist = [float(x) for x in req.recent_co2]
-        hrs  = max(1, min(req.forecast_hours, 48))
-
-        if req.last_timestamp:
-            base = datetime.fromisoformat(req.last_timestamp.replace("Z", "+00:00"))
-        else:
-            base = datetime.now(timezone.utc)
-
-        forecast = []
-        for i in range(1, hrs + 1):
-            when      = base + timedelta(hours=i)
-            predicted = max(380.0, predict_one(hist, when))
-            hist.append(predicted)              # feed prediction back in
-
-            # widening uncertainty band with horizon
-            band = _metrics.get("rmse", 6.0) * (1 + 0.04 * i)
-            forecast.append({
-                "hour_offset":   i,
-                "predicted_ppm": round(predicted, 1),
-                "lower_ppm":     round(max(380.0, predicted - band), 1),
-                "upper_ppm":     round(predicted + band, 1),
-                "carbon_kg_h":   round(excess_kg_per_hour(predicted), 6),
-            })
-
-        total_kg = sum(p["carbon_kg_h"] for p in forecast)
-        return {
-            "success":        True,
-            "model_version":  f"{_metrics.get('model_type','model')}-Kgotso-v2 "
-                              f"(R2={_metrics.get('r2')}, RMSE={_metrics.get('rmse')} ppm)",
-            "baseline_ppm":   round(float(np.mean(req.recent_co2[-6:])), 1),
-            "forecast_hours": hrs,
-            "forecast":       forecast,
-            "carbon_summary": {
-                "forecast_window_kg":       round(total_kg, 4),
-                "monthly_projection_tco2e": round(total_kg / hrs * 24 * 30 / 1000, 4),
-                "monitoring_vol_m3":        MONITORING_VOL_M3,
-                "method": "GBR autoregressive forecast + Harare altitude carbon density",
-            },
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))

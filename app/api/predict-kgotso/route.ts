@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     const renderUrl = process.env.RENDER_ML_URL ?? process.env.KGOTSO_ML_URL
     if (renderUrl) {
       try {
-        const res = await fetch(`${renderUrl.replace(/\/$/, '')}/predict`, {
+        const res = await fetch(`${renderUrl.replace(/\/$/, '')}/kgotso/predict`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
