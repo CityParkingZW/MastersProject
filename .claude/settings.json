@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd \"c:\\\\Users\\\\TSITSI\\\\SCHOOL\\\\2.2\\\\ProjectApp\"; $env:GOOGLE_APPLICATION_CREDENTIALS = \"C:\\\\Users\\\\TSITSI\\\\SCHOOL\\\\2.2\\\\ProjectApp\\\\serviceAccountKey.json\"; .venv\\\\Scripts\\\\python.exe scripts\\\\plot_scope_breakdown.py 2>&1)",
+      "Bash(git checkout *)",
+      "Bash(ls app/reports app/facilities)",
+      "Bash(ls app/reports/\\\\[id\\\\])",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('scripts:', JSON.stringify\\(p.scripts,null,2\\)\\); console.log\\('has firebase-admin:', !!\\(p.dependencies||{}\\)['firebase-admin'] || !!\\(p.devDependencies||{}\\)['firebase-admin']\\)\")",
+      "Bash(git commit *)",
+      "Bash(node scripts/seed-kgotso.mjs)",
+      "Bash(cat requirements.txt)",
+      "Bash(ls ../render.yaml ../*.yaml)",
+      "Bash(cat ../render.yaml)",
+      "Bash(python -c \"import sys; print\\('python', sys.version\\)\")",
+      "Bash(python -c \"import sklearn, numpy, joblib; print\\('sklearn', sklearn.__version__, '| numpy', numpy.__version__, '| joblib', joblib.__version__\\)\")",
+      "Bash(python -c \"import pandas; print\\('pandas', pandas.__version__\\)\")",
+      "Bash(python train_kgotso.py)",
+      "Bash(PYTHONIOENCODING=utf-8 python train_kgotso.py)",
+      "Bash(PYTHONIOENCODING=utf-8 python -m uvicorn main:app --host 127.0.0.1 --port 8099)",
+      "Bash(curl -s http://127.0.0.1:8099/)",
+      "Bash(break)",
+      "Bash(curl -s -X POST http://127.0.0.1:8099/predict -H \"Content-Type: application/json\" -d \"{\\\\\"recent_co2\\\\\":[412,410,409,411,415,420,425,428,430,427,422,418,416,414,413,412,411,413,417,422,419,415,413,412],\\\\\"last_timestamp\\\\\":\\\\\"2024-05-31T23:00:00\\\\\",\\\\\"forecast_hours\\\\\":24}\")",
+      "Bash(git ls-files *)",
+      "Bash(PYTHONIOENCODING=utf-8 python -W default -c \"import warnings, joblib; p=joblib.load\\('carbon_predictor_v1.joblib'\\); print\\('LOADED OK'\\); print\\('keys:', list\\(p.keys\\(\\)\\)\\); print\\('feature_names:', p.get\\('feature_names'\\)\\); print\\('metrics:', p.get\\('metrics'\\)\\); import numpy as np; m=p['model']; s=p['scaler']; X=np.zeros\\(\\(1,len\\(p['feature_names']\\)\\)\\); print\\('predict on zeros:', float\\(m.predict\\(s.transform\\(X\\)\\)[0]\\)\\)\")",
+      "Bash(PYTHONIOENCODING=utf-8 python -m uvicorn main:app --host 127.0.0.1 --port 8098)",
+      "Bash(curl -s http://127.0.0.1:8098/)",
+      "Bash(curl -s -X POST http://127.0.0.1:8098/kgotso/predict -H \"Content-Type: application/json\" -d \"{\\\\\"recent_co2\\\\\":[412,410,409,411,415,420,425,428,430,427,422,418],\\\\\"last_timestamp\\\\\":\\\\\"2024-05-31T23:00:00\\\\\",\\\\\"forecast_hours\\\\\":6}\")",
+      "Bash(curl -s -X POST http://127.0.0.1:8098/industrial/predict -H \"Content-Type: application/json\" -d \"{\\\\\"co2_mg_m3\\\\\":900,\\\\\"ch4_mg_m3\\\\\":5,\\\\\"temperature\\\\\":25,\\\\\"humidity\\\\\":50,\\\\\"energy_kwh\\\\\":120}\")",
+      "Bash(curl -s -X POST http://127.0.0.1:8098/predict -H \"Content-Type: application/json\" -d \"{\\\\\"recent_co2\\\\\":[420,422,418],\\\\\"forecast_hours\\\\\":2}\")"
+    ]
+  }
+}

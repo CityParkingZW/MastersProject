@@ -9,19 +9,19 @@ const GRID_EMISSION_FACTOR = 0.92
 // Methane GWP (Global Warming Potential)
 const CH4_GWP = 28
 
-// Base values with realistic ranges
+// Base values in mg/m³  (CO₂: ppm × 1.8004; CH₄: ppm × 0.6561)
 const BASE_VALUES = {
-  co2_ppm: { min: 400, max: 800, base: 450 },
-  ch4_ppm: { min: 1.8, max: 10, base: 2.5 },
-  temperature: { min: 18, max: 35, base: 25 },
-  humidity: { min: 30, max: 80, base: 55 },
-  energy_kwh: { min: 50, max: 500, base: 150 },
+  co2_mg_m3:   { min: 720,  max: 1440, base: 810  },  // 400–800 ppm
+  ch4_mg_m3:   { min: 1.18, max: 6.56, base: 1.64 },  // 1.8–10 ppm
+  temperature: { min: 18,   max: 35,   base: 25   },
+  humidity:    { min: 30,   max: 80,   base: 55   },
+  energy_kwh:  { min: 50,   max: 500,  base: 150  },
 }
 
 // Time-based patterns (hour of day multipliers)
 const HOURLY_PATTERNS = {
-  energy: [0.3, 0.25, 0.2, 0.2, 0.25, 0.4, 0.6, 0.8, 1.0, 1.0, 0.95, 0.9, 0.85, 0.9, 0.95, 1.0, 0.9, 0.7, 0.5, 0.45, 0.4, 0.38, 0.35, 0.32],
-  co2: [0.6, 0.55, 0.5, 0.5, 0.55, 0.7, 0.85, 0.95, 1.0, 1.0, 0.95, 0.9, 0.88, 0.9, 0.92, 0.95, 0.85, 0.75, 0.65, 0.6, 0.58, 0.55, 0.6, 0.58],
+  energy: [0.3, 0.25, 0.2, 0.2, 0.25, 0.4, 0.6, 0.8, 1, 1, 0.95, 0.9, 0.85, 0.9, 0.95, 1, 0.9, 0.7, 0.5, 0.45, 0.4, 0.38, 0.35, 0.32],
+  co2:    [0.6, 0.55, 0.5, 0.5, 0.55, 0.7, 0.85, 0.95, 1, 1, 0.95, 0.9, 0.88, 0.9, 0.92, 0.95, 0.85, 0.75, 0.65, 0.6, 0.58, 0.55, 0.6, 0.58],
 }
 
 function getHourMultiplier(hour: number, pattern: number[]): number {
@@ -47,21 +47,21 @@ export function generateSensorReading(deviceId: string = 'CM001', facilityId: st
   
   // Generate values with patterns and noise
   const energy_kwh = addNoise(BASE_VALUES.energy_kwh.base * energyMultiplier, 10)
-  const co2_ppm = addNoise(BASE_VALUES.co2_ppm.base * co2Multiplier, 8)
-  const ch4_ppm = addNoise(BASE_VALUES.ch4_ppm.base * (0.8 + Math.random() * 0.4), 15)
+  const co2_mg_m3  = addNoise(BASE_VALUES.co2_mg_m3.base  * co2Multiplier, 8)
+  const ch4_mg_m3  = addNoise(BASE_VALUES.ch4_mg_m3.base  * (0.8 + Math.random() * 0.4), 15)
   const temperature = addNoise(BASE_VALUES.temperature.base + (hour >= 10 && hour <= 16 ? 5 : 0), 5)
-  const humidity = addNoise(BASE_VALUES.humidity.base - (hour >= 10 && hour <= 16 ? 10 : 0), 8)
-  
+  const humidity    = addNoise(BASE_VALUES.humidity.base   - (hour >= 10 && hour <= 16 ? 10 : 0), 8)
+
   return {
-    device_id: deviceId,
+    device_id:   deviceId,
     facility_id: facilityId,
-    timestamp: now.toISOString(),
-    co2_ppm: clamp(co2_ppm, BASE_VALUES.co2_ppm.min, BASE_VALUES.co2_ppm.max),
-    ch4_ppm: clamp(ch4_ppm, BASE_VALUES.ch4_ppm.min, BASE_VALUES.ch4_ppm.max),
+    timestamp:   now.toISOString(),
+    co2_mg_m3:   clamp(co2_mg_m3,   BASE_VALUES.co2_mg_m3.min,  BASE_VALUES.co2_mg_m3.max),
+    ch4_mg_m3:   clamp(ch4_mg_m3,   BASE_VALUES.ch4_mg_m3.min,  BASE_VALUES.ch4_mg_m3.max),
     temperature: clamp(temperature, BASE_VALUES.temperature.min, BASE_VALUES.temperature.max),
-    humidity: clamp(humidity, BASE_VALUES.humidity.min, BASE_VALUES.humidity.max),
-    energy_kwh: clamp(energy_kwh, BASE_VALUES.energy_kwh.min, BASE_VALUES.energy_kwh.max),
-    air_quality_index: Math.round(clamp((co2_ppm - 400) / 4, 0, 100)),
+    humidity:    clamp(humidity,    BASE_VALUES.humidity.min,    BASE_VALUES.humidity.max),
+    energy_kwh:  clamp(energy_kwh,  BASE_VALUES.energy_kwh.min,  BASE_VALUES.energy_kwh.max),
+    air_quality_index: Math.round(clamp((co2_mg_m3 - 720) / 7.2, 0, 100)),
     data_source: 'simulator' as const,
   }
 }
@@ -81,8 +81,8 @@ export function generateHistoricalData(hours: number = 24, deviceId: string = 'C
       device_id: deviceId,
       facility_id: 'FAC001',
       timestamp: timestamp.toISOString(),
-      co2_ppm: clamp(addNoise(BASE_VALUES.co2_ppm.base * co2Multiplier, 8), BASE_VALUES.co2_ppm.min, BASE_VALUES.co2_ppm.max),
-      ch4_ppm: clamp(addNoise(BASE_VALUES.ch4_ppm.base * (0.8 + Math.random() * 0.4), 15), BASE_VALUES.ch4_ppm.min, BASE_VALUES.ch4_ppm.max),
+      co2_mg_m3: clamp(addNoise(BASE_VALUES.co2_mg_m3.base * co2Multiplier, 8), BASE_VALUES.co2_mg_m3.min, BASE_VALUES.co2_mg_m3.max),
+      ch4_mg_m3: clamp(addNoise(BASE_VALUES.ch4_mg_m3.base * (0.8 + Math.random() * 0.4), 15), BASE_VALUES.ch4_mg_m3.min, BASE_VALUES.ch4_mg_m3.max),
       temperature: clamp(addNoise(BASE_VALUES.temperature.base + (hour >= 10 && hour <= 16 ? 5 : 0), 5), BASE_VALUES.temperature.min, BASE_VALUES.temperature.max),
       humidity: clamp(addNoise(BASE_VALUES.humidity.base - (hour >= 10 && hour <= 16 ? 10 : 0), 8), BASE_VALUES.humidity.min, BASE_VALUES.humidity.max),
       energy_kwh: clamp(addNoise(BASE_VALUES.energy_kwh.base * energyMultiplier, 10), BASE_VALUES.energy_kwh.min, BASE_VALUES.energy_kwh.max),
@@ -100,13 +100,13 @@ export function calculateCarbonEmission(reading: SensorReading): CarbonEmission 
   
   // Calculate CO2e from methane (Scope 1 - fugitive emissions)
   // Assuming CH4 leak rate based on PPM above background
-  const ch4_excess = Math.max(0, reading.ch4_ppm - 1.8) // Background CH4 is ~1.8 ppm
-  const ch4_mass_kg = ch4_excess * 0.001 // Simplified conversion
-  const ch4_co2e_kg = ch4_mass_kg * CH4_GWP
-  
-  // Direct CO2 from facility operations (Scope 1 - stationary combustion)
-  const co2_excess = Math.max(0, reading.co2_ppm - 420) // Background CO2 is ~420 ppm
-  const co2_direct_kg = co2_excess * 0.0001 // Simplified conversion
+  // Atmospheric backgrounds in mg/m³: CH₄ = 1.9 ppm × 0.6561; CO₂ = 420 ppm × 1.8004
+  const ch4_excess    = Math.max(0, reading.ch4_mg_m3 - 1.247)
+  const ch4_mass_kg   = ch4_excess * 0.001524  // adjusted for mg/m³ → kg factor
+  const ch4_co2e_kg   = ch4_mass_kg * CH4_GWP
+
+  const co2_excess    = Math.max(0, reading.co2_mg_m3 - 756.2)
+  const co2_direct_kg = co2_excess * 0.0000555
   
   return {
     timestamp: reading.timestamp,
@@ -121,13 +121,13 @@ export function calculateCarbonEmission(reading: SensorReading): CarbonEmission 
 
 export function generatePredictions(historicalData: SensorReading[], hoursAhead: number = 24): Prediction[] {
   const predictions: Prediction[] = []
-  const lastReading = historicalData[historicalData.length - 1]
+  const lastReading = historicalData.at(-1)!
   const now = new Date(lastReading.timestamp)
   
   // Calculate trend from last 6 hours
   const recentData = historicalData.slice(-6)
   const avgEnergy = recentData.reduce((sum, r) => sum + r.energy_kwh, 0) / recentData.length
-  const avgCH4 = recentData.reduce((sum, r) => sum + r.ch4_ppm, 0) / recentData.length
+  const avgCH4 = recentData.reduce((sum, r) => sum + r.ch4_mg_m3, 0) / recentData.length
   
   for (let i = 1; i <= hoursAhead; i++) {
     const futureTime = new Date(now.getTime() + i * 60 * 60 * 1000)
@@ -140,7 +140,7 @@ export function generatePredictions(historicalData: SensorReading[], hoursAhead:
     
     // Calculate predicted CO2e
     const energyContribution = predictedEnergy * GRID_EMISSION_FACTOR
-    const ch4Contribution = (predictedCH4 - 1.8) * 0.001 * CH4_GWP
+    const ch4Contribution = (predictedCH4 - 1.247) * 0.001524 * CH4_GWP
     const predicted_co2e_kg = energyContribution + ch4Contribution
     
     // Confidence intervals widen with time
@@ -155,7 +155,7 @@ export function generatePredictions(historicalData: SensorReading[], hoursAhead:
       factors: {
         energy_contribution: energyContribution / predicted_co2e_kg,
         ch4_contribution: ch4Contribution / predicted_co2e_kg,
-        temperature_factor: 1.0,
+        temperature_factor: 1,
       },
     })
   }
@@ -192,8 +192,8 @@ export function generateDailySummaries(days: number = 30): DailyEmissionSummary[
         fugitive_emissions:    scope1 * 0.15,
         purchased_electricity: scope2,
       },
-      avg_co2_ppm:   addNoise(520, 10),
-      max_co2_ppm:   addNoise(680, 15),
+      avg_co2_mg_m3: addNoise(936,  10),   // 520 ppm × 1.8004
+      max_co2_mg_m3: addNoise(1224, 15),   // 680 ppm × 1.8004
       reading_count: 288,
       createdAt:     date.toISOString(),
       updatedAt:     date.toISOString(),
@@ -210,29 +210,29 @@ export function generateAlerts(reading: SensorReading): Alert[] {
   const base = { facility_id: reading.facility_id, device_id: reading.device_id, timestamp: now, acknowledged: false }
 
   // High CO2 alert
-  if (reading.co2_ppm > 650) {
-    const co2Critical = reading.co2_ppm > 750
+  if (reading.co2_mg_m3 > 1170) {  // 650 ppm × 1.8004
+    const co2Critical = reading.co2_mg_m3 > 1350  // 750 ppm × 1.8004
     alerts.push({
       ...base,
       id: `alert-co2-${Date.now()}`,
       type: co2Critical ? 'critical' : 'warning',
-      message: `CO2 levels ${co2Critical ? 'critically ' : ''}elevated`,
+      message: `CO₂ levels ${co2Critical ? 'critically ' : ''}elevated`,
       sensor: 'MQ-135',
-      value: reading.co2_ppm,
-      threshold: 650,
+      value: reading.co2_mg_m3,
+      threshold: 1170,
     })
   }
 
   // High methane alert
-  if (reading.ch4_ppm > 5) {
+  if (reading.ch4_mg_m3 > 3.28) {  // 5 ppm × 0.6561
     alerts.push({
       ...base,
       id: `alert-ch4-${Date.now()}`,
-      type: reading.ch4_ppm > 8 ? 'critical' : 'warning',
+      type: reading.ch4_mg_m3 > 5.25 ? 'critical' : 'warning',  // 8 ppm × 0.6561
       message: 'Methane leak detected',
       sensor: 'MQ-4',
-      value: reading.ch4_ppm,
-      threshold: 5,
+      value: reading.ch4_mg_m3,
+      threshold: 3.28,
     })
   }
 

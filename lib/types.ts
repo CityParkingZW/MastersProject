@@ -197,8 +197,8 @@ export interface SensorReading {
   device_id: string                   // FK → devices/{id}
   facility_id: string                 // FK → facilities/{id}
   timestamp: string                   // ISO timestamp
-  co2_ppm: number
-  ch4_ppm: number
+  co2_mg_m3: number
+  ch4_mg_m3: number
   temperature: number
   humidity: number
   energy_kwh: number
@@ -209,8 +209,8 @@ export interface SensorReading {
 export interface SensorStats {
   current: SensorReading
   averages: {
-    co2_ppm: number
-    ch4_ppm: number
+    co2_mg_m3: number
+    ch4_mg_m3: number
     temperature: number
     humidity: number
     energy_kwh: number
@@ -247,8 +247,8 @@ export interface DailyEmissionSummary {
     fugitive_emissions: number
     purchased_electricity: number
   }
-  avg_co2_ppm: number
-  max_co2_ppm: number
+  avg_co2_mg_m3: number
+  max_co2_mg_m3: number
   reading_count: number
   createdAt: string
   updatedAt: string

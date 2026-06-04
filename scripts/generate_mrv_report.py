@@ -440,14 +440,14 @@ def generate_mrv_report(
                 {
                     "type": "MQ-135",
                     "parameter": "CO2/Air Quality",
-                    "unit": "ppm",
+                    "unit": "mg/m³",
                     "accuracy": "±10%",
                     "calibration_frequency": "Annual"
                 },
                 {
                     "type": "MQ-4",
                     "parameter": "Methane (CH4)",
-                    "unit": "ppm",
+                    "unit": "mg/m³",
                     "accuracy": "±10%",
                     "calibration_frequency": "Annual"
                 },

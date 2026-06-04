@@ -16,7 +16,7 @@ import json
 import tempfile
 import math
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import functions_framework
 from firebase_admin import initialize_app, storage
@@ -40,8 +40,10 @@ CH4_GWP           = 28
 CH4_DENSITY       = 0.657
 CO2_DENSITY       = 1.977
 MONITORING_VOL_M3 = 100
-ATMOSPHERIC_CO2   = 420
-ATMOSPHERIC_CH4   = 1.9
+ATMOSPHERIC_CO2   = 420    # ppm (model trained on ppm)
+ATMOSPHERIC_CH4   = 1.9    # ppm
+CO2_MG_TO_PPM     = 24.45 / 44.01   # ≈ 0.5554
+CH4_MG_TO_PPM     = 24.45 / 16.04   # ≈ 1.5243
 
 
 def load_model():
@@ -67,17 +69,22 @@ def load_model():
         return None
 
 
-def build_features(data: dict) -> list:
+def build_features(data: dict) -> dict:
     """Build the feature vector in the same order as training."""
-    import numpy as np
+    import numpy as np  # noqa: F401
 
-    now   = datetime.utcnow()
+    now   = datetime.now(timezone.utc)
     hour  = data.get("hour",  now.hour)
     month = data.get("month", now.month)
     dow   = now.weekday()
 
-    co2_ppm     = float(data.get("co2_ppm",     420))
-    ch4_ppm     = float(data.get("ch4_ppm",     1.9))
+    # Accept mg/m³ fields; fall back to ppm fields for backward compat
+    co2_ppm = (float(data["co2_mg_m3"]) * CO2_MG_TO_PPM
+               if "co2_mg_m3" in data
+               else float(data.get("co2_ppm", 420)))
+    ch4_ppm = (float(data["ch4_mg_m3"]) * CH4_MG_TO_PPM
+               if "ch4_mg_m3" in data
+               else float(data.get("ch4_ppm", 1.9)))
     temperature = float(data.get("temperature", 25))
     humidity    = float(data.get("humidity",    55))
     energy_kwh  = float(data.get("energy_kwh",  0))
@@ -134,8 +141,12 @@ def build_features(data: dict) -> list:
 
 def rule_based_prediction(data: dict) -> dict:
     """GHG Protocol fallback if model is unavailable."""
-    co2_ppm    = float(data.get("co2_ppm",    420))
-    ch4_ppm    = float(data.get("ch4_ppm",    1.9))
+    co2_ppm = (float(data["co2_mg_m3"]) * CO2_MG_TO_PPM
+               if "co2_mg_m3" in data
+               else float(data.get("co2_ppm", 420)))
+    ch4_ppm = (float(data["ch4_mg_m3"]) * CH4_MG_TO_PPM
+               if "ch4_mg_m3" in data
+               else float(data.get("ch4_ppm", 1.9)))
     energy_kwh = float(data.get("energy_kwh", 0))
 
     ch4_excess      = max(0, ch4_ppm - ATMOSPHERIC_CH4)
@@ -183,7 +194,7 @@ def predict_emissions(request):
         if not data:
             return (json.dumps({"error": "JSON body required"}), 400, headers)
 
-        required = ["co2_ppm", "ch4_ppm", "temperature", "humidity", "energy_kwh"]
+        required = ["temperature", "humidity", "energy_kwh"]  # co2/ch4 accept ppm or mg/m³
         missing  = [f for f in required if f not in data]
         if missing:
             return (json.dumps({"error": f"Missing fields: {missing}"}), 400, headers)
@@ -216,9 +227,9 @@ def predict_emissions(request):
         else:
             result = rule_based_prediction(data)
 
-        result["timestamp"] = datetime.utcnow().isoformat() + "Z"
+        result["timestamp"] = datetime.now(timezone.utc).isoformat()
         return (json.dumps({"success": True, "prediction": result}), 200, headers)
 
     except Exception as e:
-        logger.error(f"Prediction error: {e}")
+        logger.exception("Prediction error")
         return (json.dumps({"error": str(e)}), 500, headers)

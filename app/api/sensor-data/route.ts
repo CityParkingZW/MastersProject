@@ -2,15 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase-admin'
 import { FieldValue } from 'firebase-admin/firestore'
 
+// Conversion factors: sensor hardware reports ppm; we store and display mg/m³
+const CO2_PPM_TO_MG  = 44.01 / 24.45   // ≈ 1.8004
+const CH4_PPM_TO_MG  = 16.04 / 24.45   // ≈ 0.6561
+
 interface LiveReading {
-  device_id: string
+  device_id:   string
   facility_id: string
-  co2_ppm: number
-  ch4_ppm: number
+  co2_mg_m3:   number
+  ch4_mg_m3:   number
   temperature: number
-  humidity: number
-  energy_kwh: number
-  uptime_ms: number
+  humidity:    number
+  energy_kwh:  number
+  uptime_ms:   number
   received_at: string
 }
 
@@ -18,20 +22,30 @@ interface LiveReading {
 const latestByDevice = new Map<string, LiveReading>()
 
 // POST — ESP32 sends sensor data here every ~10 seconds
-// Expected body: { device_id, facility_id, co2_ppm, ch4_ppm, temperature, humidity, energy_kwh, uptime_ms }
+// Accepts either mg/m³ fields (co2_mg_m3, ch4_mg_m3) or legacy ppm fields
+// (co2_ppm, ch4_ppm) — ppm values are converted on ingestion.
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
 
-    const device_id: string = body.device_id || 'dev-unknown'
+    const device_id:   string = body.device_id   || 'dev-unknown'
     const facility_id: string = body.facility_id || 'unknown'
     const now = new Date().toISOString()
+
+    // Accept mg/m³ directly; fall back to ppm and convert
+    const co2_mg_m3 = body.co2_mg_m3 == null
+      ? Number(body.co2_ppm || 0) * CO2_PPM_TO_MG
+      : Number(body.co2_mg_m3)
+
+    const ch4_mg_m3 = body.ch4_mg_m3 == null
+      ? Number(body.ch4_ppm || 0) * CH4_PPM_TO_MG
+      : Number(body.ch4_mg_m3)
 
     const reading: LiveReading = {
       device_id,
       facility_id,
-      co2_ppm:     Number(body.co2_ppm)     || 0,
-      ch4_ppm:     Number(body.ch4_ppm)     || 0,
+      co2_mg_m3,
+      ch4_mg_m3,
       temperature: Number(body.temperature) || 0,
       humidity:    Number(body.humidity)    || 0,
       energy_kwh:  Number(body.energy_kwh)  || 0,
@@ -46,29 +60,26 @@ export async function POST(req: NextRequest) {
     const firestoreDoc = {
       device_id,
       facility_id,
-      timestamp: now,
-      co2_ppm:     reading.co2_ppm,
-      ch4_ppm:     reading.ch4_ppm,
-      temperature: reading.temperature,
-      humidity:    reading.humidity,
-      energy_kwh:  reading.energy_kwh,
-      air_quality_index: Math.round(reading.co2_ppm / 10),
-      data_source: 'esp32',
-      createdAt: FieldValue.serverTimestamp(),
+      timestamp:         now,
+      co2_mg_m3:         reading.co2_mg_m3,
+      ch4_mg_m3:         reading.ch4_mg_m3,
+      temperature:       reading.temperature,
+      humidity:          reading.humidity,
+      energy_kwh:        reading.energy_kwh,
+      air_quality_index: Math.round(Math.max(0, Math.min(100, (reading.co2_mg_m3 - 720) / 7.2))),
+      data_source:       'esp32',
+      createdAt:         FieldValue.serverTimestamp(),
     }
 
     await adminDb.collection('sensor_readings').add(firestoreDoc)
 
-    // Update device last_seen
     await adminDb.collection('devices').doc(device_id).update({
       last_seen: now,
-      status: 'online',
+      status:    'online',
       updatedAt: now,
-    }).catch(() => {
-      // Device doc may not exist yet — ignore silently
-    })
+    }).catch(() => {})
 
-    console.log(`[ESP32] ${device_id} @ ${facility_id} — CO2: ${reading.co2_ppm} ppm`)
+    console.log(`[ESP32] ${device_id} @ ${facility_id} — CO₂: ${reading.co2_mg_m3.toFixed(1)} mg/m³`)
     return NextResponse.json({ ok: true, received_at: now })
   } catch {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
@@ -76,7 +87,6 @@ export async function POST(req: NextRequest) {
 }
 
 // GET — Dashboard polls this every 5 seconds
-// Query param: ?device_id=dev-hps-001  (optional; returns all if omitted)
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const device_id = searchParams.get('device_id')
@@ -92,7 +102,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ connected: true, ...reading })
   }
 
-  // No device_id — return the most recent reading across all devices
   let newest: LiveReading | null = null
   for (const r of latestByDevice.values()) {
     if (!newest || r.received_at > newest.received_at) newest = r

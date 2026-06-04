@@ -1,0 +1,11 @@
+runConfig:
+  minInstances: 0
+  maxInstances: 4
+  concurrency: 80
+
+env:
+  - variable: RENDER_ML_URL
+    value: https://kgotso-ml-harare.onrender.com
+    availability:
+      - BUILD
+      - RUNTIME

@@ -12,26 +12,26 @@ interface SensorTimeSeriesProps {
   className?: string
 }
 
-type MetricKey = 'co2_ppm' | 'ch4_ppm' | 'temperature' | 'humidity' | 'energy_kwh'
+type MetricKey = 'co2_mg_m3' | 'ch4_mg_m3' | 'temperature' | 'humidity' | 'energy_kwh'
 
 const metricConfig: Record<MetricKey, { label: string; color: string; unit: string }> = {
-  co2_ppm: { label: 'CO2', color: 'hsl(var(--chart-1))', unit: 'ppm' },
-  ch4_ppm: { label: 'CH4', color: 'hsl(var(--chart-2))', unit: 'ppm' },
-  temperature: { label: 'Temp', color: 'hsl(var(--chart-3))', unit: '°C' },
-  humidity: { label: 'Humidity', color: 'hsl(var(--chart-4))', unit: '%' },
-  energy_kwh: { label: 'Energy', color: 'hsl(var(--chart-5))', unit: 'kWh' },
+  co2_mg_m3:   { label: 'CO₂',      color: 'hsl(var(--chart-1))', unit: 'mg/m³' },
+  ch4_mg_m3:   { label: 'CH₄',      color: 'hsl(var(--chart-2))', unit: 'mg/m³' },
+  temperature: { label: 'Temp',     color: 'hsl(var(--chart-3))', unit: '°C' },
+  humidity:    { label: 'Humidity', color: 'hsl(var(--chart-4))', unit: '%' },
+  energy_kwh:  { label: 'Energy',   color: 'hsl(var(--chart-5))', unit: 'kWh' },
 }
 
 export function SensorTimeSeries({ data, className }: SensorTimeSeriesProps) {
-  const [selectedMetrics, setSelectedMetrics] = useState<MetricKey[]>(['co2_ppm', 'ch4_ppm'])
+  const [selectedMetrics, setSelectedMetrics] = useState<MetricKey[]>(['co2_mg_m3', 'ch4_mg_m3'])
 
   const chartData = data.map((d) => ({
-    time: new Date(d.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-    co2_ppm: d.co2_ppm,
-    ch4_ppm: d.ch4_ppm * 100, // Scale up for visibility
+    time:        new Date(d.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+    co2_mg_m3:   d.co2_mg_m3,
+    ch4_mg_m3:   d.ch4_mg_m3 * 100, // Scale up for visibility on shared axis
     temperature: d.temperature,
-    humidity: d.humidity,
-    energy_kwh: d.energy_kwh,
+    humidity:    d.humidity,
+    energy_kwh:  d.energy_kwh,
   }))
 
   const toggleMetric = (metric: MetricKey) => {
@@ -50,7 +50,7 @@ export function SensorTimeSeries({ data, className }: SensorTimeSeriesProps) {
             <CardTitle>Sensor Readings</CardTitle>
             <CardDescription>Real-time sensor data over the last 24 hours</CardDescription>
           </div>
-          <Tabs defaultValue="co2_ppm" className="w-auto">
+          <Tabs defaultValue="co2_mg_m3" className="w-auto">
             <TabsList className="h-8">
               {(Object.keys(metricConfig) as MetricKey[]).map((key) => (
                 <TabsTrigger

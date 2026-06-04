@@ -71,6 +71,7 @@ vite.config.ts.timestamp-*
 
 #security yangu
 serviceAccountKey.json
+serviceAccount.json
 #zvema models
 models/
 *.joblib
@@ -79,3 +80,6 @@ models/
 !ml-service/kgotso_co2_model.joblib
 .venv/
 node_modules/
+# python bytecode
+__pycache__/
+*.pyc

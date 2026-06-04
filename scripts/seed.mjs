@@ -69,6 +69,9 @@ const CH4_GWP            = 28      // IPCC AR5 GWP-100
 const rand   = (min, max) => Math.random() * (max - min) + min
 const noise  = (val, pct = 0.08) => val + (Math.random() - 0.5) * 2 * pct * val
 const clamp  = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+const CO2_PPM_TO_MG = 44.01 / 24.45   // ≈ 1.8004
+const CH4_PPM_TO_MG = 16.04 / 24.45   // ≈ 0.6561
+
 const round1 = v => Number.parseFloat(v.toFixed(1))
 const round2 = v => Number.parseFloat(v.toFixed(2))
 
@@ -493,8 +496,10 @@ function generateSensorReadings(facilityId, deviceId) {
     // Rainy season: afternoon thunderstorms cool things slightly (14:00–17:00)
     const stormCool = (hourLocal >= 14 && hourLocal <= 17 && Math.random() < 0.35) ? -3 : 0
 
-    const co2_ppm     = round1(clamp(noise(base.co2 * workFactor, 0.07),  380, 1400))
-    const ch4_ppm     = round2(clamp(noise(base.ch4 * workFactor, 0.09),  1, 15))
+    const co2_raw     = round1(clamp(noise(base.co2 * workFactor, 0.07),  380, 1400))
+    const ch4_raw     = round2(clamp(noise(base.ch4 * workFactor, 0.09),  1, 15))
+    const co2_mg_m3   = round2(co2_raw * CO2_PPM_TO_MG)
+    const ch4_mg_m3   = round2(ch4_raw * CH4_PPM_TO_MG)
     const temperature = round1(clamp(noise(base.temp, 0.05) + stormCool,  18, 58))
     const humidity    = round1(clamp(noise(base.hum, 0.06),               25, 95))
 
@@ -502,12 +507,12 @@ function generateSensorReadings(facilityId, deviceId) {
       device_id:         deviceId,
       facility_id:       facilityId,
       timestamp:         ts,
-      co2_ppm,
-      ch4_ppm,
+      co2_mg_m3,
+      ch4_mg_m3,
       temperature,
       humidity,
       energy_kwh,
-      air_quality_index: Math.round(co2_ppm / 10),
+      air_quality_index: Math.round(Math.max(0, Math.min(100, (co2_mg_m3 - 720) / 7.2))),
       data_source:       'simulator',
     })
   }
@@ -542,8 +547,10 @@ function generateDailySummaries(facilityId, monthlyTargetKg) {
 
     // Seasonal temperature at this day in the window
     const avg_temp   = seasonalTemp(d, base.temp)
-    const avg_co2_ppm = round1(clamp(noise(base.co2 * monthFactor * weekFactor, 0.06), 380, 1400))
-    const max_co2_ppm = round1(clamp(avg_co2_ppm * rand(1.06, 1.22), 380, 1400))
+    const avg_co2_raw  = round1(clamp(noise(base.co2 * monthFactor * weekFactor, 0.06), 380, 1400))
+    const max_co2_raw  = round1(clamp(avg_co2_raw * rand(1.06, 1.22), 380, 1400))
+    const avg_co2_mg_m3 = round1(avg_co2_raw * CO2_PPM_TO_MG)
+    const max_co2_mg_m3 = round1(max_co2_raw * CO2_PPM_TO_MG)
 
     // Total daily CO2e
     const dayNoise   = 1 + (Math.random() - 0.5) * 0.12
@@ -569,8 +576,8 @@ function generateDailySummaries(facilityId, monthlyTargetKg) {
         fugitive_emissions:    sc1_fugitive,
         purchased_electricity: scope2,
       },
-      avg_co2_ppm,
-      max_co2_ppm,
+      avg_co2_mg_m3,
+      max_co2_mg_m3,
       avg_temperature:  round1(avg_temp),
       reading_count:    24,
       createdAt: new Date('2026-03-01T06:00:00Z').toISOString(),
