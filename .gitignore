@@ -83,3 +83,7 @@ node_modules/
 # python bytecode
 __pycache__/
 *.pyc
+
+# Claude AI skills (local only, not for repo)
+.claude/skills/
+.agents/skills/
