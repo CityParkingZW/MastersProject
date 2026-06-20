@@ -84,6 +84,6 @@ node_modules/
 __pycache__/
 *.pyc
 
-# Claude AI skills (local only, not for repo)
-.claude/skills/
-.agents/skills/
+# Claude AI files (local only, not for repo)
+.claude/
+.agents/
