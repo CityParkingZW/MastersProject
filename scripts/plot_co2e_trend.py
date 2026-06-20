@@ -36,21 +36,21 @@ PROJECT_ID   = "carbon-monitor-zw"
 WINDOW_START = date(2025, 12, 1)
 WINDOW_END   = date(2026, 2, 28)
 
-FACILITIES = ["fac-zpc", "fac-zisco", "fac-delta", "fac-national-foods", "fac-cottco"]
+FACILITIES = ["fac-zpc", "fac-zisco", "fac-nrz", "fac-mbpm", "fac-cottco"]
 
 PALETTE = {
     "fac-zpc":            "#d62728",
     "fac-zisco":          "#ff7f0e",
-    "fac-delta":          "#1f77b4",
-    "fac-national-foods": "#2ca02c",
+    "fac-nrz":          "#1f77b4",
+    "fac-mbpm": "#2ca02c",
     "fac-cottco":         "#9467bd",
 }
 
 LABELS = {
     "fac-zpc":            "ZPC",
     "fac-zisco":          "ZISCO",
-    "fac-delta":          "Delta",
-    "fac-national-foods": "Nat. Foods",
+    "fac-nrz":          "NRZ Bulawayo",
+    "fac-mbpm": "MBPM Mutare",
     "fac-cottco":         "Cottco",
 }
 
@@ -59,8 +59,8 @@ LABELS = {
 DAILY_TARGETS = {
     "fac-zpc":            1_900,
     "fac-zisco":          1_350,
-    "fac-delta":            700,
-    "fac-national-foods":   410,
+    "fac-nrz":            700,
+    "fac-mbpm":   410,
     "fac-cottco":           270,
 }
 
@@ -69,8 +69,8 @@ DAILY_TARGETS = {
 SIM_PROFILES = {
     "fac-zpc":            {"base": 2100, "var": 280, "trend": -0.8},
     "fac-zisco":          {"base": 1560, "var": 210, "trend": -0.5},
-    "fac-delta":          {"base":  790, "var": 120, "trend": -0.3},
-    "fac-national-foods": {"base":  460, "var":  70, "trend": -0.2},
+    "fac-nrz":          {"base":  790, "var": 120, "trend": -0.3},
+    "fac-mbpm": {"base":  460, "var":  70, "trend": -0.2},
     "fac-cottco":         {"base":  305, "var":  45, "trend": -0.1},
 }
 

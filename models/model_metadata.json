@@ -57,7 +57,7 @@
     "co2_density": 1.977,
     "monitoring_volume_m3": 100
   },
-  "created_at": "2026-05-26T19:16:12.128410",
+  "created_at": "2026-06-04T22:24:55.980070",
   "version": "v1",
   "training_notes": "Trained on 7 Harare industrial facilities: Msasa Metal Works, Workington Food Processing, Pomona Waste, Ruwa Tobacco, Goromonzi Livestock, Southerton Logistics, Chitungwiza Plastics. 60-day synthesised dataset with ZESA load-shedding, Harare altitude correction (1483 m), rainy/dry seasonal patterns."
 }

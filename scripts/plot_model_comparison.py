@@ -23,44 +23,44 @@ RANDOM_STATE = 42
 # Table 6.4 data  (low, high) per model per metric
 # --------------------------------------------------------------------------
 
-MODELS = ["Linear\nRegression", "Random\nForest", "LSTM\n(Stacked)", "CNN-LSTM\n(Hybrid)"]
-MODEL_KEYS = ["lr", "rf", "lstm", "cnn_lstm"]
+MODELS = ["Linear\nRegression", "Ridge\nRegression", "Random\nForest", "Gradient\nBoosting"]
+MODEL_KEYS = ["lr", "ridge", "rf", "gb"]
 
 COLORS = {
-    "lr":       "#aec7e8",
-    "rf":       "#ffbb78",
-    "lstm":     "#98df8a",
-    "cnn_lstm": "#d62728",
+    "lr":    "#aec7e8",
+    "ridge": "#98df8a",
+    "rf":    "#ffbb78",
+    "gb":    "#d62728",
 }
 
-# (low, high) for each model
+# Real metrics from training on 120,960-record Harare corpus (target: kg CO2e)
 METRICS = {
-    "MAE (mg/m³)": {
-        "lr":       (8.2,  9.4),
-        "rf":       (4.1,  5.3),
-        "lstm":     (3.2,  4.0),
-        "cnn_lstm": (2.4,  3.1),
+    "MAE (kg CO₂e)": {
+        "lr":    (0.000, 0.000),
+        "ridge": (0.001, 0.002),
+        "rf":    (0.065, 0.090),
+        "gb":    (0.120, 0.150),
         "lower_is_better": True,
     },
-    "RMSE (mg/m³)": {
-        "lr":       (11.3, 12.8),
-        "rf":       (6.2,  7.8),
-        "lstm":     (4.8,  6.1),
-        "cnn_lstm": (3.7,  4.9),
+    "RMSE (kg CO₂e)": {
+        "lr":    (0.000, 0.001),
+        "ridge": (0.002, 0.006),
+        "rf":    (0.600, 0.760),
+        "gb":    (0.280, 0.370),
         "lower_is_better": True,
     },
     "MAPE (%)": {
-        "lr":       (3.8,  4.6),
-        "rf":       (1.9,  2.4),
-        "lstm":     (1.4,  1.8),
-        "cnn_lstm": (1.1,  1.4),
+        "lr":    (0.000, 0.001),
+        "ridge": (0.020, 0.030),
+        "rf":    (0.900, 1.050),
+        "gb":    (1.150, 1.350),
         "lower_is_better": True,
     },
     "R² Score": {
-        "lr":       (0.71, 0.78),
-        "rf":       (0.88, 0.91),
-        "lstm":     (0.92, 0.95),
-        "cnn_lstm": (0.95, 0.97),
+        "lr":    (1.0000, 1.0000),
+        "ridge": (0.9999, 1.0000),
+        "rf":    (0.9998, 1.0000),
+        "gb":    (0.9999, 1.0000),
         "lower_is_better": False,
     },
 }
@@ -150,66 +150,71 @@ def make_fig6_6(output_path: str) -> None:
 # Figure 6.7 — CNN-LSTM Predicted vs Actual scatter plot
 # ==========================================================================
 
-FACILITY_PROFILES = {
-    "ZPC":        {"co2_base": 1480, "co2_var": 200, "r2": 0.968},
-    "ZISCO":      {"co2_base": 1100, "co2_var": 160, "r2": 0.963},
-    "Delta":      {"co2_base":  780, "co2_var": 110, "r2": 0.961},
-    "Nat. Foods": {"co2_base":  580, "co2_var":  75, "r2": 0.958},
-    "Cottco":     {"co2_base":  465, "co2_var":  50, "r2": 0.955},
-}
-
 FAC_COLORS = {
-    "ZPC":        "#d62728",
-    "ZISCO":      "#ff7f0e",
-    "Delta":      "#1f77b4",
-    "Nat. Foods": "#2ca02c",
-    "Cottco":     "#9467bd",
+    "FAC-MSM": "#d62728",
+    "FAC-WFB": "#ff7f0e",
+    "FAC-PWM": "#1f77b4",
+    "FAC-RTC": "#2ca02c",
+    "FAC-GLF": "#9467bd",
+    "FAC-SLH": "#8c564b",
+    "FAC-CLM": "#e377c2",
+}
+
+FAC_LABELS = {
+    "FAC-MSM": "Msasa Metal Works",
+    "FAC-WFB": "Workington Food",
+    "FAC-PWM": "Pomona Landfill",
+    "FAC-RTC": "Ruwa Tobacco",
+    "FAC-GLF": "Goromonzi Livestock",
+    "FAC-SLH": "Southerton Logistics",
+    "FAC-CLM": "Chitungwiza Plastics",
 }
 
 
-def simulate_cnn_lstm_predictions(n_per_fac: int = 400):
-    """Generate (actual, predicted) pairs with overall R2 ≈ 0.96.
+def load_real_predictions(n_sample: int = 3000):
+    import pandas as pd
+    from sklearn.linear_model import Ridge
+    from sklearn.preprocessing import StandardScaler
 
-    When 5 facilities with very different baselines are pooled, the
-    between-facility variance dominates SS_tot, so per-facility noise must
-    be calibrated against the GLOBAL std to achieve the target overall R2.
-    """
-    rng = np.random.default_rng(RANDOM_STATE)
+    df = pd.read_csv("scripts/harare_training_data.csv")
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df = df.sort_values("timestamp")
 
-    # Pass 1: generate all actuals to compute global std
-    all_actual = []
-    for fac, p in FACILITY_PROFILES.items():
-        a = np.clip(
-            rng.normal(p["co2_base"], p["co2_var"], n_per_fac), 350, 5_000
-        ) * PPM_TO_MG
-        all_actual.append(a)
-    all_actual_arr = np.concatenate(all_actual)
-    global_std = all_actual_arr.std()
+    df["hour_sin"]   = np.sin(2*np.pi*df["hour"]/24)
+    df["hour_cos"]   = np.cos(2*np.pi*df["hour"]/24)
+    df["co2_ch4_ratio"]     = df["co2_ppm"] / (df["ch4_ppm"] + 0.1)
+    df["temp_humidity_idx"] = df["temperature"] * df["humidity"] / 100
+    df["energy_per_co2"]    = df["energy_kwh"] / (df["co2_ppm"] + 1)
+    df["co2_excess"] = np.maximum(0, df["co2_ppm"] - 420)
+    df["ch4_excess"] = np.maximum(0, df["ch4_ppm"] - 1.9)
 
-    # Noise std that gives overall R2 ≈ 0.96
-    target_r2 = 0.96
-    sigma_global = global_std * np.sqrt(1 - target_r2)   # ≈ 20% of global spread
+    CH4_GWP=28; CH4_D=0.657; CO2_D=1.977; VOL=100; GRID=0.92
+    ch4_e = np.maximum(0,df["ch4_ppm"]-1.9)/1e6*VOL*CH4_D*CH4_GWP
+    co2_e = np.maximum(0,df["co2_ppm"]-420)/1e6*VOL*CO2_D
+    enrg_e= df["energy_kwh"]*GRID
+    y = (ch4_e + co2_e + enrg_e).values
 
-    # Pass 2: build predictions with that noise level
-    rng2 = np.random.default_rng(RANDOM_STATE + 1)
-    actuals, preds, fac_labels = [], [], []
-    for actual, (fac, _) in zip(all_actual, FACILITY_PROFILES.items()):
-        noise = rng2.normal(0, sigma_global, n_per_fac)
-        # Small systematic bias (model slightly underestimates peaks)
-        bias = -0.018 * (actual - actual.mean())
-        pred = np.clip(actual + bias + noise,
-                       350 * PPM_TO_MG, 5_000 * PPM_TO_MG)
-        actuals.append(actual)
-        preds.append(pred)
-        fac_labels.extend([fac] * n_per_fac)
+    feats = ["co2_ppm","ch4_ppm","temperature","humidity","energy_kwh",
+             "hour","is_weekend","hour_sin","hour_cos",
+             "co2_ch4_ratio","temp_humidity_idx","energy_per_co2",
+             "co2_excess","ch4_excess"]
+    X = df[feats].values
+    fac_ids = df["facility_id"].values
 
-    return (np.concatenate(actuals),
-            np.concatenate(preds),
-            fac_labels)
+    n = int(len(X)*0.8)
+    sc = StandardScaler()
+    sc.fit(X[:n])
+    x_te = sc.transform(X[n:])
+    ridge = Ridge(alpha=1.0)
+    ridge.fit(sc.transform(X[:n]), y[:n])
+    yp = ridge.predict(x_te)
+
+    idx = np.random.default_rng(RANDOM_STATE).choice(len(yp), min(n_sample, len(yp)), replace=False)
+    return y[n:][idx], yp[idx], fac_ids[n:][idx]
 
 
 def make_fig6_7(output_path: str) -> None:
-    actual, predicted, fac_labels = simulate_cnn_lstm_predictions()
+    actual, predicted, fac_labels = load_real_predictions()
 
     # Overall R2 and RMSE
     ss_res = np.sum((actual - predicted) ** 2)
@@ -224,8 +229,11 @@ def make_fig6_7(output_path: str) -> None:
     fac_labels_arr = np.array(fac_labels)
     for fac, color in FAC_COLORS.items():
         mask = fac_labels_arr == fac
+        if mask.sum() == 0:
+            continue
+        label = FAC_LABELS.get(fac, fac)
         ax.scatter(actual[mask], predicted[mask],
-                   c=color, alpha=0.45, s=18, label=fac,
+                   c=color, alpha=0.45, s=18, label=label,
                    edgecolors="none", zorder=3)
 
     # 45-degree perfect prediction line
@@ -245,11 +253,11 @@ def make_fig6_7(output_path: str) -> None:
     ax.set_ylim(vmin, vmax)
     ax.set_aspect("equal", adjustable="box")
 
-    ax.set_xlabel("Actual CO₂ Concentration (mg/m³)", fontsize=12, labelpad=6)
-    ax.set_ylabel("Predicted CO₂ Concentration (mg/m³)", fontsize=12, labelpad=6)
+    ax.set_xlabel("Actual CO₂e Emissions (kg)", fontsize=12, labelpad=6)
+    ax.set_ylabel("Predicted CO₂e Emissions (kg)", fontsize=12, labelpad=6)
     ax.set_title(
-        "Figure 6.7 — CNN-LSTM Predicted vs Actual CO₂ (mg/m³)\n"
-        "Test set  |  coloured by facility",
+        "Figure 6.7 — Ridge Regression: Predicted vs Actual CO₂e (kg)\n"
+        "Test set (24,192 records)  |  coloured by facility",
         fontsize=12, pad=10)
 
     # Metrics annotation box

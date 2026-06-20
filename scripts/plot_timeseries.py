@@ -141,8 +141,8 @@ def load_simulated(facility_id: str) -> pd.DataFrame:
     profiles = {
         "fac-zpc":            {"co2_base": 1480, "co2_var": 220, "energy_base": 95},
         "fac-zisco":          {"co2_base": 1100, "co2_var": 180, "energy_base": 75},
-        "fac-delta":          {"co2_base":  780, "co2_var": 120, "energy_base": 32},
-        "fac-national-foods": {"co2_base":  580, "co2_var":  80, "energy_base": 20},
+        "fac-nrz":          {"co2_base":  780, "co2_var": 120, "energy_base": 32},
+        "fac-mbpm": {"co2_base":  580, "co2_var":  80, "energy_base": 20},
         "fac-cottco":         {"co2_base":  465, "co2_var":  50, "energy_base": 14},
     }
     p = profiles.get(facility_id, profiles["fac-zpc"])
@@ -240,8 +240,8 @@ def make_figure(df: pd.DataFrame, facility_id: str, output_path: str) -> None:
     label_map = {
         "fac-zpc":            "ZPC (Zimbabwe Power Corporation)",
         "fac-zisco":          "ZISCO",
-        "fac-delta":          "Delta Beverages",
-        "fac-national-foods": "National Foods",
+        "fac-nrz":          "NRZ Bulawayo",
+        "fac-mbpm": "MBPM Mutare",
         "fac-cottco":         "Cottco",
     }
     fac_label = label_map.get(facility_id, facility_id)

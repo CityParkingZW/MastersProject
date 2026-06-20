@@ -36,21 +36,21 @@ PROJECT_ID   = "carbon-monitor-zw"
 WINDOW_START = datetime(2025, 12, 1, tzinfo=timezone.utc)
 WINDOW_END   = datetime(2026, 3,  1, tzinfo=timezone.utc)
 
-FACILITIES = ["fac-zpc", "fac-zisco", "fac-delta", "fac-national-foods", "fac-cottco"]
+FACILITIES = ["fac-zpc", "fac-zisco", "fac-nrz", "fac-mbpm", "fac-cottco"]
 
 PALETTE = {
     "fac-zpc":            "#d62728",
     "fac-zisco":          "#ff7f0e",
-    "fac-delta":          "#1f77b4",
-    "fac-national-foods": "#2ca02c",
+    "fac-nrz":          "#1f77b4",
+    "fac-mbpm": "#2ca02c",
     "fac-cottco":         "#9467bd",
 }
 
 LABELS = {
     "fac-zpc":            "ZPC",
     "fac-zisco":          "ZISCO",
-    "fac-delta":          "Delta",
-    "fac-national-foods": "Nat. Foods",
+    "fac-nrz":          "NRZ Bulawayo",
+    "fac-mbpm": "MBPM Mutare",
     "fac-cottco":         "Cottco",
 }
 
@@ -58,8 +58,8 @@ LABELS = {
 PROFILES = {
     "fac-zpc":            {"co2_base": 1480, "co2_var": 220, "peak_hour": 10, "amplitude": 0.30},
     "fac-zisco":          {"co2_base": 1100, "co2_var": 170, "peak_hour": 11, "amplitude": 0.28},
-    "fac-delta":          {"co2_base":  780, "co2_var": 120, "peak_hour": 12, "amplitude": 0.22},
-    "fac-national-foods": {"co2_base":  580, "co2_var":  80, "peak_hour": 13, "amplitude": 0.20},
+    "fac-nrz":          {"co2_base":  780, "co2_var": 120, "peak_hour": 12, "amplitude": 0.22},
+    "fac-mbpm": {"co2_base":  580, "co2_var":  80, "peak_hour": 13, "amplitude": 0.20},
     "fac-cottco":         {"co2_base":  465, "co2_var":  50, "peak_hour":  9, "amplitude": 0.18},
 }
 

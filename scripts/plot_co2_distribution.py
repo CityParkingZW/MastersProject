@@ -58,7 +58,7 @@ FACILITY_PROFILES = {
         "energy_base": 80,   "energy_variance": 25,
         "name": "heavy_industry",
     },
-    "fac-delta": {
+    "fac-nrz": {
         "co2_base": 780, "co2_variance": 130,    # beverages / process heat
         "ch4_base": 3,   "ch4_variance": 1,
         "temp_base": 28, "temp_variance": 5,
@@ -66,7 +66,7 @@ FACILITY_PROFILES = {
         "energy_base": 35,   "energy_variance": 10,
         "name": "waste_processing",
     },
-    "fac-national-foods": {
+    "fac-mbpm": {
         "co2_base": 580, "co2_variance": 90,     # food processing
         "ch4_base": 2.5, "ch4_variance": 0.8,
         "temp_base": 26, "temp_variance": 4,
@@ -85,13 +85,13 @@ FACILITY_PROFILES = {
 }
 
 # Display order (highest → lowest median)
-FACILITY_ORDER = ["fac-zpc", "fac-zisco", "fac-delta", "fac-national-foods", "fac-cottco"]
+FACILITY_ORDER = ["fac-zpc", "fac-zisco", "fac-nrz", "fac-mbpm", "fac-cottco"]
 
 PALETTE = {
     "fac-zpc":           "#d62728",   # red
     "fac-zisco":         "#ff7f0e",   # orange
-    "fac-delta":         "#1f77b4",   # blue
-    "fac-national-foods":"#2ca02c",   # green
+    "fac-nrz":         "#1f77b4",   # blue
+    "fac-mbpm":"#2ca02c",   # green
     "fac-cottco":        "#9467bd",   # purple
 }
 
@@ -167,8 +167,8 @@ def make_figure(df: pd.DataFrame, output_path: str) -> None:
     label_map = {
         "fac-zpc":            "ZPC",
         "fac-zisco":          "ZISCO",
-        "fac-delta":          "Delta",
-        "fac-national-foods": "Nat. Foods",
+        "fac-nrz":          "NRZ Bulawayo",
+        "fac-mbpm":         "MBPM Mutare",
         "fac-cottco":         "Cottco",
     }
     df["Facility"] = df["facility_id"].map(label_map)
